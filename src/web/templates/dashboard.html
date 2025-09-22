@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en" x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }" :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        },
+                        accent: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            300: '#86efac',
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                        'bounce-gentle': 'bounceGentle 2s infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        bounceGentle: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-5px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .dark body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        
+        .panel {
+            height: calc(100vh - 5rem);
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .dark .panel {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid rgba(75, 85, 99, 0.3);
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 1024px) {
+            .panel {
+                height: auto;
+                min-height: 300px;
+                max-height: 50vh;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .panel {
+                max-height: 40vh;
+            }
+        }
+        
+        .bot-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .dark .bot-card {
+            background: rgba(31, 41, 55, 0.9);
+            border: 1px solid rgba(75, 85, 99, 0.3);
+        }
+        
+        .bot-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .dark .bot-card:hover {
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 10px currentColor;
+        }
+        
+        .status-online { 
+            background-color: #22c55e; 
+            color: #22c55e;
+            animation: pulse-slow 2s infinite;
+        }
+        .status-busy { 
+            background-color: #f59e0b; 
+            color: #f59e0b;
+            animation: bounce-gentle 1.5s infinite;
+        }
+        .status-offline { 
+            background-color: #ef4444; 
+            color: #ef4444;
+        }
+        .status-error { 
+            background-color: #dc2626; 
+            color: #dc2626;
+            animation: pulse 1s infinite;
+        }
+        
+        .chat-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .file-item {
+            transition: background-color 0.2s ease;
+        }
+        .file-item:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .pipeline-step {
+            transition: all 0.3s ease;
+        }
+        .pipeline-step.completed {
+            background-color: #d1fae5;
+            border-color: #10b981;
+        }
+        .pipeline-step.running {
+            background-color: #fef3c7;
+            border-color: #f59e0b;
+            animation: pulse 2s infinite;
+        }
+        .pipeline-step.pending {
+            background-color: #f3f4f6;
+            border-color: #d1d5db;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body class="min-h-screen" x-data="dashboardApp()" x-init="init()">
+    <!-- Enhanced Header -->
+    <header class="backdrop-blur-md bg-white/90 dark:bg-gray-900/90 shadow-lg border-b border-gray-200/20 dark:border-gray-700/20 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-4">
+                    <div class="flex-shrink-0">
+                        <h1 class="text-2xl font-bold bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent">
+                            <i class="fas fa-robot text-primary-500 mr-2 animate-bounce-gentle"></i>
+                            Brebot Enhanced
+                        </h1>
+                    </div>
+                    <div class="hidden md:flex items-center space-x-2 text-sm">
+                        <span class="text-gray-600 dark:text-gray-400">Online Bots:</span>
+                        <span class="font-semibold text-accent-600 dark:text-accent-400" x-text="onlineBots"></span>
+                        <span class="text-gray-400">•</span>
+                        <span class="text-gray-600 dark:text-gray-400">Active Tasks:</span>
+                        <span class="font-semibold text-primary-600 dark:text-primary-400" x-text="activeTasks.length"></span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <!-- System Status -->
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 rounded-full shadow-lg" :class="{
+                            'bg-accent-500 animate-pulse-slow': systemStatus === 'healthy',
+                            'bg-yellow-500 animate-bounce-gentle': systemStatus === 'warning',
+                            'bg-red-500 animate-pulse': systemStatus === 'error'
+                        }"></div>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize" x-text="systemStatus"></span>
+                    </div>
+                    
+                    <!-- Dark Mode Toggle -->
+                    <button @click="toggleDarkMode()" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-200">
+                        <i class="fas fa-moon dark:hidden"></i>
+                        <i class="fas fa-sun hidden dark:block"></i>
+                    </button>
+                    
+                    <!-- Refresh Button -->
+                    <button @click="refreshSystemStatus()" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-200">
+                        <i class="fas fa-sync-alt" :class="{ 'animate-spin': systemStatus === 'checking' }"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard -->
+    <div class="flex flex-col lg:flex-row h-screen p-2 sm:p-4 gap-2 sm:gap-4">
+        <!-- Left Panel: File Explorer -->
+        <div class="w-full lg:w-1/4 panel rounded-xl shadow-xl order-2 lg:order-1">
+            <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center mb-4">
+                    <i class="fas fa-brain mr-3 text-primary-500"></i>
+                    Knowledge Hub
+                </h2>
+                <div class="flex flex-wrap gap-2">
+                    <button @click="refreshFiles()" class="px-3 py-2 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-sync-alt mr-1"></i>Refresh
+                    </button>
+                    <button @click="showUploadModal = true" class="px-3 py-2 text-xs bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300 rounded-lg hover:bg-accent-200 dark:hover:bg-accent-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-upload mr-1"></i>Upload
+                    </button>
+                    <button @click="showMemoryManager = true" class="px-3 py-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-memory mr-1"></i>Memory
+                    </button>
+                    <button @click="showToolManager = true" class="px-3 py-2 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-lg hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-tools mr-1"></i>Tools
+                    </button>
+                    <button @click="showConnectionsModal = true" class="px-3 py-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-plug mr-1"></i>Connections
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-4">
+                <!-- Memory Usage -->
+                <div class="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Memory Usage</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400" x-text="memoryUsage + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-300" :style="'width: ' + memoryUsage + '%'"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <span x-text="memoryStats.used"></span> / <span x-text="memoryStats.total"></span> documents
+                    </div>
+                </div>
+
+                <!-- File Sources with Selection -->
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Knowledge Sources</span>
+                        <button @click="selectAllFiles()" class="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                            Select All
+                        </button>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="mr-3 text-blue-600 focus:ring-blue-500" x-model="selectedSources.dropbox">
+                                <i class="fab fa-dropbox text-blue-600 mr-2"></i>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Dropbox</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs text-gray-500 dark:text-gray-400">15 files</span>
+                                <div class="text-xs text-blue-600 dark:text-blue-400" x-show="selectedSources.dropbox">Selected</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="mr-3 text-green-600 focus:ring-green-500" x-model="selectedSources.googleDrive">
+                                <i class="fab fa-google-drive text-green-600 mr-2"></i>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Google Drive</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs text-gray-500 dark:text-gray-400">8 files</span>
+                                <div class="text-xs text-green-600 dark:text-green-400" x-show="selectedSources.googleDrive">Selected</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="mr-3 text-purple-600 focus:ring-purple-500" x-model="selectedSources.notion">
+                                <i class="fas fa-cloud text-purple-600 mr-2"></i>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Notion</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs text-gray-500 dark:text-gray-400">3 docs</span>
+                                <div class="text-xs text-purple-600 dark:text-purple-400" x-show="selectedSources.notion">Selected</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ingestion Controls -->
+                <div class="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Ingestion Queue</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400" x-text="selectedSourcesCount + ' selected'"></span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button @click="startIngestion()" class="flex-1 px-3 py-2 text-xs bg-accent-500 text-white rounded-lg hover:bg-accent-600 transition-all duration-200 flex items-center justify-center" :disabled="selectedSourcesCount === 0">
+                            <i class="fas fa-play mr-1"></i>Ingest Selected
+                        </button>
+                        <button @click="clearQueue()" class="px-3 py-2 text-xs bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all duration-200">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Recent Files -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Recent Files</span>
+                    </div>
+                    <div class="space-y-1">
+                        <template x-for="file in recentFiles" :key="file.name">
+                            <div class="file-item p-2 rounded cursor-pointer" @click="selectFile(file)">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <i :class="getFileIcon(file.type)" class="mr-2 text-gray-500"></i>
+                                        <span class="text-sm" x-text="file.name"></span>
+                                    </div>
+                                    <span class="text-xs text-gray-400" x-text="file.size"></span>
+                                </div>
+                                <div class="text-xs text-gray-400 mt-1" x-text="file.modified"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="mt-6">
+                    <div class="text-sm font-medium text-gray-700 mb-2">Quick Actions</div>
+                    <div class="space-y-2">
+                        <button @click="startPipeline('design-to-shopify')" class="w-full p-2 text-left text-sm bg-blue-50 hover:bg-blue-100 rounded transition-colors">
+                            <i class="fas fa-magic mr-2 text-blue-600"></i>
+                            Design → Shopify
+                        </button>
+                        <button @click="startPipeline('content-creation')" class="w-full p-2 text-left text-sm bg-green-50 hover:bg-green-100 rounded transition-colors">
+                            <i class="fas fa-pen-fancy mr-2 text-green-600"></i>
+                            Content Creation
+                        </button>
+                        <button @click="organizeFiles()" class="w-full p-2 text-left text-sm bg-purple-50 hover:bg-purple-100 rounded transition-colors">
+                            <i class="fas fa-sort-alpha-down mr-2 text-purple-600"></i>
+                            Organize Files
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Panel: Chat with Brebot -->
+        <div class="w-full lg:w-1/2 panel rounded-xl shadow-xl order-1 lg:order-2">
+            <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                        <i class="fas fa-comments mr-3 text-accent-500"></i>
+                        Chat with Brebot
+                    </h2>
+                    <div class="flex items-center space-x-3">
+                        <select x-model="selectedBot" class="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                            <option value="brebot">Brebot Manager</option>
+                            <option value="mocktopus">MockTopus</option>
+                            <option value="airtable-logger">Airtable Logger</option>
+                            <option value="shopify-publisher">Shopify Publisher</option>
+                        </select>
+                        <button @click="toggleRAG()" class="p-2 rounded-lg transition-all duration-200" :class="useRAG ? 'bg-accent-100 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'">
+                            <i class="fas fa-brain"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="flex-1 p-6 overflow-y-auto" style="height: calc(100% - 140px);">
+                <div class="space-y-4">
+                    <template x-for="message in chatMessages" :key="message.id">
+                        <div class="chat-message animate-slide-up" :class="message.sender === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                            <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm" 
+                                 :class="message.sender === 'user' ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'">
+                                <div class="text-sm leading-relaxed" x-text="message.text"></div>
+                                <div class="text-xs opacity-70 mt-2" x-text="message.timestamp"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-6 border-t border-gray-200/50 dark:border-gray-700/50">
+                <div class="flex space-x-3">
+                    <input 
+                        x-model="chatInput" 
+                        @keydown.enter="sendMessage()"
+                        type="text" 
+                        placeholder="Ask Brebot anything..."
+                        class="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    >
+                    <button @click="sendMessage()" class="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl hover:from-primary-600 hover:to-primary-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="mt-3 text-xs text-gray-500 dark:text-gray-400 flex items-center">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <span x-text="useRAG ? 'RAG enabled - using knowledge base' : 'Direct chat mode'"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Bot Organization -->
+        <div class="w-full lg:w-1/4 panel rounded-xl shadow-xl order-3">
+            <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                        <i class="fas fa-sitemap mr-3 text-purple-500"></i>
+                        Bot Organization
+                    </h2>
+                    <button @click="showCreateBotModal = true" class="px-3 py-1 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-all duration-200 flex items-center">
+                        <i class="fas fa-plus mr-1"></i>New Bot
+                    </button>
+                </div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">
+                    <span class="font-semibold text-accent-600 dark:text-accent-400" x-text="onlineBots"></span> online, 
+                    <span class="font-semibold text-yellow-600 dark:text-yellow-400" x-text="busyBots"></span> busy
+                </div>
+            </div>
+
+            <div class="p-6">
+                <!-- Bot Hierarchy Tree -->
+                <div class="space-y-2">
+                    <template x-for="department in botHierarchy" :key="department.name">
+                        <div class="department-node">
+                            <!-- Department Header -->
+                            <div class="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg cursor-pointer" 
+                                 @click="toggleDepartment(department.name)">
+                                <div class="flex items-center">
+                                    <i class="fas fa-chevron-right mr-2 text-gray-500 transition-transform duration-200" 
+                                       :class="department.expanded ? 'rotate-90' : ''"></i>
+                                    <i :class="department.icon" class="mr-2 text-purple-600"></i>
+                                    <span class="font-semibold text-sm text-gray-900 dark:text-gray-100" x-text="department.name"></span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs text-gray-500 dark:text-gray-400" x-text="department.bots.length + ' bots'"></span>
+                                    <span class="w-2 h-2 rounded-full" :class="department.status === 'healthy' ? 'bg-accent-500' : 'bg-yellow-500'"></span>
+                                </div>
+                            </div>
+                            
+                            <!-- Bot Nodes -->
+                            <div x-show="department.expanded" class="ml-6 mt-2 space-y-2">
+                                <template x-for="bot in department.bots" :key="bot.bot_id">
+                                    <div class="bot-node p-3 border border-gray-200/50 dark:border-gray-700/50 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md" 
+                                         @click="selectBotNode(bot)"
+                                         :class="selectedBotId === bot.bot_id ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-lg' : ''">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <div class="flex items-center">
+                                                <span class="status-indicator" :class="'status-' + bot.status"></span>
+                                                <span class="font-medium text-sm text-gray-900 dark:text-gray-100" x-text="bot.bot_id"></span>
+                                            </div>
+                                            <button @click.stop="editBot(bot)" class="p-1 text-gray-400 hover:text-primary-600 transition-colors">
+                                                <i class="fas fa-edit text-xs"></i>
+                                            </button>
+                                        </div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-2" x-text="bot.description"></div>
+                                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                                            <span>Tasks: <span class="font-semibold" x-text="bot.tasks_completed"></span></span>
+                                            <span>Health: <span class="font-semibold" x-text="bot.health_score + '%'"></span></span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Current Tasks -->
+                <div class="mt-6">
+                    <div class="text-sm font-medium text-gray-700 mb-2">Current Tasks</div>
+                    <div class="space-y-2">
+                        <template x-for="task in activeTasks" :key="task.task_id">
+                            <div class="p-2 bg-gray-50 rounded text-xs">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-medium" x-text="task.bot_id"></span>
+                                    <span class="text-gray-500" x-text="task.progress + '%'"></span>
+                                </div>
+                                <div class="text-gray-600 mt-1" x-text="task.message"></div>
+                                <div class="w-full bg-gray-200 rounded-full h-1 mt-1">
+                                    <div class="bg-blue-600 h-1 rounded-full" :style="'width: ' + task.progress + '%'"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Pipeline Status -->
+                <div class="mt-6">
+                    <div class="text-sm font-medium text-gray-700 mb-2">Active Pipelines</div>
+                    <div class="space-y-2">
+                        <template x-for="pipeline in activePipelines" :key="pipeline.id">
+                            <div class="p-2 bg-gray-50 rounded text-xs">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-medium" x-text="pipeline.type"></span>
+                                    <span class="text-gray-500" x-text="pipeline.progress + '%'"></span>
+                                </div>
+                                <div class="text-gray-600 mb-1" x-text="pipeline.current_step"></div>
+                                <div class="w-full bg-gray-200 rounded-full h-1">
+                                    <div class="bg-green-600 h-1 rounded-full" :style="'width: ' + pipeline.progress + '%'"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div x-show="showUploadModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-96">
+            <h3 class="text-lg font-semibold mb-4">Upload File</h3>
+            <div class="space-y-4">
+                <input type="file" class="w-full p-2 border border-gray-300 rounded">
+                <div class="flex justify-end space-x-2">
+                    <button @click="showUploadModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button @click="uploadFile()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Upload</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Management Modal -->
+    <div x-show="showMemoryManager" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-memory mr-2 text-purple-500"></i>
+                        Memory Management
+                    </h3>
+                    <button @click="showMemoryManager = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <!-- Memory Statistics -->
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div class="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Documents</div>
+                        <div class="text-2xl font-bold text-blue-700 dark:text-blue-300" x-text="memoryStats.total"></div>
+                    </div>
+                    <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div class="text-sm text-green-600 dark:text-green-400 font-medium">Indexed</div>
+                        <div class="text-2xl font-bold text-green-700 dark:text-green-300" x-text="memoryStats.indexed"></div>
+                    </div>
+                </div>
+                
+                <!-- Memory Actions -->
+                <div class="space-y-4">
+                    <div class="flex space-x-3">
+                        <button @click="optimizeMemory()" class="flex-1 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+                            <i class="fas fa-compress mr-2"></i>Optimize Memory
+                        </button>
+                        <button @click="clearMemory()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                            <i class="fas fa-trash mr-2"></i>Clear All
+                        </button>
+                    </div>
+                    
+                    <!-- Memory Categories -->
+                    <div class="space-y-2">
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100">Memory Categories</h4>
+                        <template x-for="category in memoryCategories" :key="category.name">
+                            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <div class="flex items-center">
+                                    <i :class="category.icon" class="mr-3 text-gray-600"></i>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100" x-text="category.name"></span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs text-gray-500 dark:text-gray-400" x-text="category.count + ' docs'"></span>
+                                    <button @click="clearCategory(category.name)" class="text-red-500 hover:text-red-700">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bot Editor Modal -->
+    <div x-show="showBotEditor" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-edit mr-2 text-primary-500"></i>
+                        Edit Bot: <span x-text="editingBot?.bot_id"></span>
+                    </h3>
+                    <button @click="showBotEditor = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Bot Details -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot Name</label>
+                            <input x-model="editingBot.bot_id" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+                            <textarea x-model="editingBot.description" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Responsibilities</label>
+                            <textarea x-model="editingBot.responsibilities" rows="4" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                    </div>
+                    
+                    <!-- Bot Image & Settings -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot Avatar</label>
+                            <div class="flex items-center space-x-4">
+                                <div class="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                                    <img x-show="editingBot.avatar" :src="editingBot.avatar" class="w-full h-full object-cover rounded-lg">
+                                    <i x-show="!editingBot.avatar" class="fas fa-robot text-gray-400"></i>
+                                </div>
+                                <button @click="uploadBotAvatar()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+                                    <i class="fas fa-upload mr-2"></i>Upload Image
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                            <select x-model="editingBot.status" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                <option value="online">Online</option>
+                                <option value="busy">Busy</option>
+                                <option value="offline">Offline</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Health Score</label>
+                            <input type="range" x-model="editingBot.health_score" min="0" max="100" class="w-full">
+                            <div class="text-sm text-gray-500 dark:text-gray-400" x-text="editingBot.health_score + '%'"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <button @click="showBotEditor = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                        Cancel
+                    </button>
+                    <button @click="saveBot()" class="px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+                        <i class="fas fa-save mr-2"></i>Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Bot Modal -->
+    <div x-show="showCreateBotModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-plus mr-2 text-primary-500"></i>
+                        Create New Bot
+                    </h3>
+                    <button @click="showCreateBotModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Bot Configuration -->
+                    <div class="space-y-4">
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-4">Bot Configuration</h4>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot Name *</label>
+                            <input x-model="newBot.bot_id" placeholder="e.g., content-writer" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Department *</label>
+                            <select x-model="newBot.department" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                <option value="">Select Department</option>
+                                <option value="Content Creation">Content Creation</option>
+                                <option value="Data Management">Data Management</option>
+                                <option value="E-commerce">E-commerce</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="Customer Service">Customer Service</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot Type *</label>
+                            <select x-model="newBot.bot_type" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                <option value="">Select Type</option>
+                                <option value="text_processing">Text Processing</option>
+                                <option value="image_processing">Image Processing</option>
+                                <option value="data_processing">Data Processing</option>
+                                <option value="web_scraping">Web Scraping</option>
+                                <option value="api_integration">API Integration</option>
+                                <option value="file_management">File Management</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description *</label>
+                            <textarea x-model="newBot.description" rows="3" placeholder="Brief description of what this bot does..." class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Responsibilities</label>
+                            <textarea x-model="newBot.responsibilities" rows="4" placeholder="Detailed list of bot responsibilities and capabilities..." class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Initial Status</label>
+                            <select x-model="newBot.status" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                <option value="online">Online</option>
+                                <option value="offline">Offline</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Voice Configuration -->
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <h5 class="font-medium text-gray-900 dark:text-gray-100 mb-3">Voice Configuration</h5>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Voice Provider</label>
+                                    <select x-model="newBot.voice.provider" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                        <option value="openai">OpenAI</option>
+                                        <option value="elevenlabs">ElevenLabs</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Voice ID</label>
+                                    <select x-model="newBot.voice.voice_id" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                        <template x-if="newBot.voice.provider === 'openai'">
+                                            <div>
+                                                <option value="alloy">Alloy</option>
+                                                <option value="echo">Echo</option>
+                                                <option value="fable">Fable</option>
+                                                <option value="onyx">Onyx</option>
+                                                <option value="nova">Nova</option>
+                                                <option value="shimmer">Shimmer</option>
+                                            </div>
+                                        </template>
+                                        <template x-if="newBot.voice.provider === 'elevenlabs'">
+                                            <div>
+                                                <option value="21m00Tcm4TlvDq8ikWAM">Rachel</option>
+                                                <option value="AZnzlk1XvdvUeBnXmlld">Domi</option>
+                                                <option value="EXAVITQu4vr4xnSDxMaL">Bella</option>
+                                                <option value="ErXwobaYiN019PkySvjV">Antoni</option>
+                                                <option value="MF3mGyEYCl7XYWbV9V6O">Elli</option>
+                                                <option value="TxGEqnHWrfWFTfGW9XjX">Josh</option>
+                                                <option value="VR6AewLTigWG4xSOukaG">Arnold</option>
+                                                <option value="pNInz6obpgDQGcFmaJgB">Adam</option>
+                                                <option value="yoZ06aMxZJJ28mfd3POQ">Sam</option>
+                                            </div>
+                                        </template>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Speed: <span x-text="newBot.voice.speed"></span></label>
+                                    <input type="range" x-model="newBot.voice.speed" min="0.5" max="2.0" step="0.1" class="w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Pitch: <span x-text="newBot.voice.pitch"></span></label>
+                                    <input type="range" x-model="newBot.voice.pitch" min="0.5" max="2.0" step="0.1" class="w-full">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tool Selection -->
+                    <div class="space-y-4">
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-4">Available Tools</h4>
+                        
+                        <!-- Tool Categories -->
+                        <div class="space-y-3">
+                            <template x-for="category in toolCategories" :key="category.name">
+                                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h5 class="font-medium text-gray-900 dark:text-gray-100" x-text="category.name"></h5>
+                                        <button @click="toggleToolCategory(category.name)" class="text-xs text-primary-600 dark:text-primary-400">
+                                            <span x-text="category.expanded ? 'Collapse' : 'Expand'"></span>
+                                        </button>
+                                    </div>
+                                    <div x-show="category.expanded" class="space-y-2">
+                                        <template x-for="tool in category.tools" :key="tool.name">
+                                            <label class="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                                                <input type="checkbox" :value="tool.name" x-model="newBot.selectedTools" class="mr-3 text-primary-600 focus:ring-primary-500">
+                                                <div class="flex-1">
+                                                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100" x-text="tool.name"></div>
+                                                    <div class="text-xs text-gray-500 dark:text-gray-400" x-text="tool.description"></div>
+                                                </div>
+                                                <div class="text-xs text-gray-400" x-text="tool.type"></div>
+                                            </label>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        
+                        <!-- Selected Tools Summary -->
+                        <div class="mt-4 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+                            <h5 class="font-medium text-primary-900 dark:text-primary-100 mb-2">Selected Tools</h5>
+                            <div class="text-sm text-primary-700 dark:text-primary-300">
+                                <span x-text="newBot.selectedTools.length"></span> tools selected
+                            </div>
+                            <div x-show="newBot.selectedTools.length > 0" class="mt-2">
+                                <template x-for="tool in newBot.selectedTools" :key="tool">
+                                    <span class="inline-block bg-primary-100 dark:bg-primary-800 text-primary-800 dark:text-primary-200 text-xs px-2 py-1 rounded mr-1 mb-1" x-text="tool"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <button @click="showCreateBotModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                        Cancel
+                    </button>
+                    <button @click="createBot()" class="px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+                        <i class="fas fa-plus mr-2"></i>Create Bot
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool Manager Modal -->
+    <div x-show="showToolManager" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-tools mr-2 text-orange-500"></i>
+                        Tool Management
+                    </h3>
+                    <button @click="showToolManager = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <!-- Tool Statistics -->
+                <div class="grid grid-cols-4 gap-4 mb-6">
+                    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div class="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Tools</div>
+                        <div class="text-2xl font-bold text-blue-700 dark:text-blue-300" x-text="getTotalTools()"></div>
+                    </div>
+                    <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div class="text-sm text-green-600 dark:text-green-400 font-medium">Active Tools</div>
+                        <div class="text-2xl font-bold text-green-700 dark:text-green-300" x-text="getActiveTools()"></div>
+                    </div>
+                    <div class="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <div class="text-sm text-purple-600 dark:text-purple-400 font-medium">Categories</div>
+                        <div class="text-2xl font-bold text-purple-700 dark:text-purple-300" x-text="toolCategories.length"></div>
+                    </div>
+                    <div class="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                        <div class="text-sm text-orange-600 dark:text-orange-400 font-medium">In Use</div>
+                        <div class="text-2xl font-bold text-orange-700 dark:text-orange-300" x-text="getToolsInUse()"></div>
+                    </div>
+                </div>
+                
+                <!-- Tool Categories -->
+                <div class="space-y-4">
+                    <h4 class="font-medium text-gray-900 dark:text-gray-100">Tool Categories</h4>
+                    <template x-for="category in toolCategories" :key="category.name">
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <div class="p-4 bg-gray-50 dark:bg-gray-700 rounded-t-lg">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <i :class="getCategoryIcon(category.name)" class="mr-3 text-gray-600"></i>
+                                        <h5 class="font-medium text-gray-900 dark:text-gray-100" x-text="category.name"></h5>
+                                        <span class="ml-2 text-sm text-gray-500 dark:text-gray-400" x-text="category.tools.length + ' tools'"></span>
+                                    </div>
+                                    <button @click="toggleToolCategory(category.name)" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
+                                        <i class="fas fa-chevron-down transition-transform duration-200" :class="category.expanded ? 'rotate-180' : ''"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div x-show="category.expanded" class="p-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <template x-for="tool in category.tools" :key="tool.name">
+                                        <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+                                            <div class="flex-1">
+                                                <div class="text-sm font-medium text-gray-900 dark:text-gray-100" x-text="tool.name"></div>
+                                                <div class="text-xs text-gray-500 dark:text-gray-400" x-text="tool.description"></div>
+                                                <div class="text-xs text-gray-400 mt-1">
+                                                    Type: <span class="font-medium" x-text="tool.type"></span>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <span class="text-xs px-2 py-1 rounded-full" 
+                                                      :class="getToolStatusClass(tool.name)"
+                                                      x-text="getToolStatus(tool.name)"></span>
+                                                <button @click="toggleToolStatus(tool.name)" class="p-1 text-gray-400 hover:text-primary-600 transition-colors">
+                                                    <i class="fas fa-power-off text-xs"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+                <!-- Tool Actions -->
+                <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex space-x-3">
+                        <button @click="enableAllTools()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                            <i class="fas fa-check mr-2"></i>Enable All
+                        </button>
+                        <button @click="disableAllTools()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                            <i class="fas fa-times mr-2"></i>Disable All
+                        </button>
+                        <button @click="refreshToolStatus()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+                            <i class="fas fa-sync-alt mr-2"></i>Refresh Status
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connections Modal -->
+    <div x-show="showConnectionsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-plug mr-2 text-primary-500"></i>
+                        External Connections
+                    </h3>
+                    <button @click="showConnectionsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <!-- Connection Statistics -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-4 text-white">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-blue-100 text-sm">Total Connections</p>
+                                <p class="text-2xl font-bold" x-text="connections.length"></p>
+                            </div>
+                            <i class="fas fa-plug text-2xl text-blue-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-lg p-4 text-white">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-green-100 text-sm">Connected</p>
+                                <p class="text-2xl font-bold" x-text="connectedCount"></p>
+                            </div>
+                            <i class="fas fa-check-circle text-2xl text-green-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-4 text-white">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-purple-100 text-sm">Ingestion Enabled</p>
+                                <p class="text-2xl font-bold" x-text="ingestionEnabledCount"></p>
+                            </div>
+                            <i class="fas fa-sync text-2xl text-purple-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg p-4 text-white">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-orange-100 text-sm">N8N Webhooks</p>
+                                <p class="text-2xl font-bold" x-text="webhookCount"></p>
+                            </div>
+                            <i class="fas fa-project-diagram text-2xl text-orange-200"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Connections Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <template x-for="connection in connections" :key="connection.connection_id">
+                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
+                            <!-- Connection Header -->
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center">
+                                    <div class="w-12 h-12 rounded-lg flex items-center justify-center text-white text-xl" 
+                                         :style="`background-color: ${connection.metadata.color}`">
+                                        <i :class="connection.metadata.icon"></i>
+                                    </div>
+                                    <div class="ml-3">
+                                        <h4 class="font-semibold text-gray-900 dark:text-gray-100" x-text="connection.name"></h4>
+                                        <p class="text-sm text-gray-600 dark:text-gray-400" x-text="connection.metadata.description"></p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <!-- Status Indicator -->
+                                    <div class="w-3 h-3 rounded-full" :class="{
+                                        'bg-green-500': connection.status === 'connected',
+                                        'bg-red-500': connection.status === 'disconnected',
+                                        'bg-yellow-500': connection.status === 'connecting',
+                                        'bg-gray-500': connection.status === 'error'
+                                    }"></div>
+                                    <span class="text-xs font-medium capitalize" x-text="connection.status"></span>
+                                </div>
+                            </div>
+                            
+                            <!-- Connection Details -->
+                            <div class="space-y-3 mb-4">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Type:</span>
+                                    <span class="font-medium text-gray-900 dark:text-gray-100" x-text="connection.connection_type"></span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Scopes:</span>
+                                    <span class="font-medium text-gray-900 dark:text-gray-100" x-text="connection.scopes.length"></span>
+                                </div>
+                                <div x-show="connection.last_sync" class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Last Sync:</span>
+                                    <span class="font-medium text-gray-900 dark:text-gray-100" x-text="formatDate(connection.last_sync)"></span>
+                                </div>
+                            </div>
+                            
+                            <!-- Connection Actions -->
+                            <div class="space-y-2">
+                                <!-- Connect/Disconnect Button -->
+                                <button @click="connection.status === 'connected' ? disconnectConnection(connection.connection_id) : connectConnection(connection.connection_id)"
+                                        :class="connection.status === 'connected' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-primary-500 hover:bg-primary-600 text-white'"
+                                        class="w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                                    <i :class="connection.status === 'connected' ? 'fas fa-unlink mr-2' : 'fas fa-link mr-2'"></i>
+                                    <span x-text="connection.status === 'connected' ? 'Disconnect' : 'Connect'"></span>
+                                </button>
+                                
+                                <!-- Ingestion Toggle -->
+                                <button @click="toggleIngestion(connection.connection_id, !connection.enabled_for_ingestion)"
+                                        :class="connection.enabled_for_ingestion ? 'bg-purple-500 hover:bg-purple-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-700'"
+                                        :disabled="connection.status !== 'connected'"
+                                        class="w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <i class="fas fa-sync mr-2"></i>
+                                    <span x-text="connection.enabled_for_ingestion ? 'Disable Ingestion' : 'Enable Ingestion'"></span>
+                                </button>
+                                
+                                <!-- Health Check -->
+                                <button @click="checkConnectionHealth(connection.connection_id)"
+                                        class="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors">
+                                    <i class="fas fa-heartbeat mr-2"></i>
+                                    Check Health
+                                </button>
+                            </div>
+                            
+                            <!-- N8N Webhook Status -->
+                            <div x-show="connection.n8n_webhook_url" class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                                <div class="flex items-center text-sm">
+                                    <i class="fas fa-project-diagram text-green-500 mr-2"></i>
+                                    <span class="text-green-700 dark:text-green-300">N8N Webhook Active</span>
+                                </div>
+                                <p class="text-xs text-green-600 dark:text-green-400 mt-1" x-text="connection.n8n_webhook_url"></p>
+                            </div>
+                            
+                            <!-- Error Message -->
+                            <div x-show="connection.error_message" class="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                <div class="flex items-center text-sm">
+                                    <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                                    <span class="text-red-700 dark:text-red-300">Error</span>
+                                </div>
+                                <p class="text-xs text-red-600 dark:text-red-400 mt-1" x-text="connection.error_message"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+                <!-- N8N Integration Info -->
+                <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-project-diagram text-2xl text-purple-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h4 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">N8N Automation Integration</h4>
+                            <p class="text-gray-600 dark:text-gray-400 mb-4">
+                                When you enable ingestion for a connection, Brebot automatically creates N8N webhooks that can trigger automation workflows. 
+                                For example: new file in Dropbox → N8N flow → auto-ingest to Brebot memory → send message to Inbox.
+                            </p>
+                            <div class="flex space-x-4">
+                                <a href="http://localhost:5678" target="_blank" class="inline-flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium transition-colors">
+                                    <i class="fas fa-external-link-alt mr-2"></i>
+                                    Open N8N
+                                </a>
+                                <button @click="refreshConnections()" class="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors">
+                                    <i class="fas fa-sync-alt mr-2"></i>
+                                    Refresh Status
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/voice-widget.js"></script>
+</body>
+</html>

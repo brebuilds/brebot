@@ -1,0 +1,295 @@
+/* Brebot Dashboard Styles */
+
+/* Custom animations */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Connection status indicators */
+.connection-connected {
+    background-color: #10b981 !important;
+    animation: pulse 2s infinite;
+}
+
+.connection-disconnected {
+    background-color: #ef4444 !important;
+}
+
+.connection-connecting {
+    background-color: #f59e0b !important;
+    animation: pulse 1s infinite;
+}
+
+/* System status indicators */
+.system-healthy {
+    background-color: #10b981 !important;
+}
+
+.system-warning {
+    background-color: #f59e0b !important;
+}
+
+.system-error {
+    background-color: #ef4444 !important;
+}
+
+/* Task status badges */
+.task-pending {
+    background-color: #6b7280;
+    color: white;
+}
+
+.task-running {
+    background-color: #3b82f6;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+.task-completed {
+    background-color: #10b981;
+    color: white;
+}
+
+.task-failed {
+    background-color: #ef4444;
+    color: white;
+}
+
+/* Agent cards */
+.agent-card {
+    transition: all 0.3s ease;
+    animation: slideIn 0.5s ease-out;
+}
+
+.agent-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Task cards */
+.task-card {
+    transition: all 0.3s ease;
+    animation: slideIn 0.5s ease-out;
+}
+
+.task-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Progress bars */
+.progress-bar {
+    transition: width 0.3s ease;
+}
+
+/* Log container */
+.logs-container {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    line-height: 1.4;
+}
+
+.log-entry {
+    margin-bottom: 2px;
+    padding: 2px 0;
+}
+
+.log-info {
+    color: #60a5fa;
+}
+
+.log-success {
+    color: #34d399;
+}
+
+.log-warning {
+    color: #fbbf24;
+}
+
+.log-error {
+    color: #f87171;
+}
+
+/* Form elements */
+.form-input:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Buttons */
+.btn-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+/* Loading states */
+.loading {
+    position: relative;
+    overflow: hidden;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .grid-cols-1.md\\:grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .grid-cols-1.lg\\:grid-cols-2 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .bg-gray-100 {
+        background-color: #1f2937;
+    }
+    
+    .bg-white {
+        background-color: #374151;
+    }
+    
+    .text-gray-900 {
+        color: #f9fafb;
+    }
+    
+    .text-gray-600 {
+        color: #d1d5db;
+    }
+    
+    .border-gray-200 {
+        border-color: #4b5563;
+    }
+    
+    .border-gray-300 {
+        border-color: #6b7280;
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Tooltip styles */
+.tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: 200px;
+    background-color: #1f2937;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -100px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+}
+
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Notification styles */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 16px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+}
+
+.notification-success {
+    background-color: #10b981;
+}
+
+.notification-error {
+    background-color: #ef4444;
+}
+
+.notification-warning {
+    background-color: #f59e0b;
+}
+
+.notification-info {
+    background-color: #3b82f6;
+}

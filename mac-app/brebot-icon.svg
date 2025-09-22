@@ -1,0 +1,53 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#3B82F6" stroke="#1D4ED8" stroke-width="8"/>
+  
+  <!-- Robot head -->
+  <rect x="180" y="160" width="152" height="120" rx="20" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  
+  <!-- Robot eyes -->
+  <circle cx="210" cy="200" r="16" fill="#3B82F6"/>
+  <circle cx="302" cy="200" r="16" fill="#3B82F6"/>
+  
+  <!-- Robot eye highlights -->
+  <circle cx="214" cy="196" r="6" fill="#FFFFFF"/>
+  <circle cx="306" cy="196" r="6" fill="#FFFFFF"/>
+  
+  <!-- Robot mouth -->
+  <rect x="220" y="240" width="72" height="8" rx="4" fill="#3B82F6"/>
+  
+  <!-- Robot antenna -->
+  <line x1="256" y1="160" x2="256" y2="120" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="256" cy="110" r="12" fill="#10B981"/>
+  
+  <!-- Robot body -->
+  <rect x="200" y="280" width="112" height="80" rx="15" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  
+  <!-- Robot chest panel -->
+  <rect x="220" y="300" width="72" height="40" rx="8" fill="#F3F4F6"/>
+  
+  <!-- Robot arms -->
+  <rect x="160" y="290" width="30" height="60" rx="15" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  <rect x="322" y="290" width="30" height="60" rx="15" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  
+  <!-- Robot hands -->
+  <circle cx="175" cy="360" r="12" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="3"/>
+  <circle cx="337" cy="360" r="12" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="3"/>
+  
+  <!-- Robot legs -->
+  <rect x="220" y="360" width="25" height="50" rx="12" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  <rect x="267" y="360" width="25" height="50" rx="12" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="4"/>
+  
+  <!-- Robot feet -->
+  <ellipse cx="232" cy="420" rx="20" ry="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="3"/>
+  <ellipse cx="280" cy="420" rx="20" ry="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="3"/>
+  
+  <!-- Decorative elements -->
+  <circle cx="120" cy="120" r="8" fill="#10B981" opacity="0.7"/>
+  <circle cx="392" cy="120" r="8" fill="#10B981" opacity="0.7"/>
+  <circle cx="120" cy="392" r="8" fill="#10B981" opacity="0.7"/>
+  <circle cx="392" cy="392" r="8" fill="#10B981" opacity="0.7"/>
+  
+  <!-- Text -->
+  <text x="256" y="480" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF">Brebot</text>
+</svg>

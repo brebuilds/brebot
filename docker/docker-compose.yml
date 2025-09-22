@@ -1,0 +1,199 @@
+version: "3.8"
+
+services:
+  # Core AI Services
+  ollama:
+    image: ollama/ollama:latest
+    container_name: brebot-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama:/root/.ollama
+      - ./models:/models
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: brebot-openwebui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=brebot-secret-key-2024
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: brebot-chromadb
+    ports:
+      - "8001:8000"  # Changed to 8001 to avoid conflict with Brebot web interface
+    volumes:
+      - ./chroma_data:/chroma/data
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Message Queue
+  redis:
+    image: redis:7-alpine
+    container_name: brebot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Brebot Web Interface
+  brebot-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile-brebot
+    container_name: brebot-web
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_URL=http://chromadb:8000
+      - REDIS_URL=redis://redis:6379
+      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - DROPBOX_TOKEN=${DROPBOX_TOKEN}
+      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN}
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../src:/app/src
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - /Users/bre/Desktop:/app/workspace
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Bot Services
+  mocktopus-bot:
+    build:
+      context: ../bots/mocktopus
+      dockerfile: Dockerfile
+    container_name: brebot-mocktopus
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - PHOTOPEA_API_URL=${PHOTOPEA_API_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  airtable-logger:
+    build:
+      context: ../bots/airtable-logger
+      dockerfile: Dockerfile
+    container_name: brebot-airtable-logger
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  shopify-publisher:
+    build:
+      context: ../bots/shopify-publisher
+      dockerfile: Dockerfile
+    container_name: brebot-shopify-publisher
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN}
+      - SHOPIFY_SHOP_DOMAIN=${SHOPIFY_SHOP_DOMAIN}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: brebot-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: brebot-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=brebot-admin
+    volumes:
+      - ./grafana_data:/var/lib/grafana
+      - ./grafana_dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  chroma_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: brebot-network
