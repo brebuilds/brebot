@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brebot Desktop</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrapper">
+    <header>
+      <h1>
+        <span>🤖</span>
+        <span>Brebot Desktop</span>
+        <span class="version">v1.0.0</span>
+      </h1>
+      <div class="status-pill" data-state="starting">Starting...</div>
+    </header>
+    <main>
+      <section class="controls">
+        <div>
+          <p class="text">Boot everything Brebot needs, then enjoy the dashboard:</p>
+          <div class="build-info">Build: 2024-09-27 21:14 UTC</div>
+          <pre class="status-log" id="status-log">Initializing...</pre>
+        </div>
+        <div class="actions">
+          <button id="start-services">Start Chroma & Redis</button>
+          <button id="start-backend">Launch Brebot Backend</button>
+          <button id="refresh-status" class="secondary">Check Status</button>
+          <button id="launch-pwa" class="secondary">Open PWA Dashboard</button>
+          <button id="embed-dashboard" class="secondary">Open Dashboard in App</button>
+        </div>
+      </section>
+      
+      <!-- Embedded Dashboard (hidden by default) -->
+      <section class="dashboard-embed" id="dashboard-embed" style="display: none;">
+        <div class="embed-header">
+          <h3>🤖 Brebot Dashboard</h3>
+          <div class="embed-controls">
+            <button id="refresh-dashboard" class="refresh-btn">🔄 Refresh</button>
+            <button id="close-embed" class="close-btn">×</button>
+          </div>
+        </div>
+        <div id="iframe-container" style="position: relative; width: 100%; height: calc(100vh - 120px);">
+          <div id="loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 10;">
+            <div style="font-size: 1.2rem; color: #6b7280; margin-bottom: 1rem;">Loading Brebot Dashboard...</div>
+            <div style="width: 40px; height: 40px; border: 4px solid #e5e7eb; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+          </div>
+          <iframe 
+            id="dashboard-frame" 
+            src="http://127.0.0.1:8000" 
+            frameborder="0"
+            allow="fullscreen"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+            style="width: 100%; height: 100%; border: none; border-radius: 8px;"
+            onload="console.log('Iframe loaded successfully'); document.getElementById('loading-indicator').style.display = 'none';"
+            onerror="console.log('Iframe failed to load'); document.getElementById('loading-indicator').innerHTML = '<div style=\'color: #ef4444;\'>Failed to load dashboard. <button onclick=\'location.reload()\'>Retry</button></div>';">
+          </iframe>
+        </div>
+      </section>
+    </main>
+  </div>
+  
+  <script type="module">
+    import { invoke } from 'https://unpkg.com/@tauri-apps/api@1.5.3/tauri.js';
+    
+    console.log('🚀 Simple script starting...');
+    console.log('Available buttons:', document.querySelectorAll('button'));
+    console.log('Embed button:', document.getElementById('embed-dashboard'));
+    
+    const BREBOT_URL = 'http://127.0.0.1:8000';
+    
+    const statusPill = document.querySelector('.status-pill');
+    const logArea = document.querySelector('.status-log');
+    
+    function setStatus(state, message) {
+      statusPill.dataset.state = state;
+      statusPill.textContent = message;
+      const timestamp = new Date().toLocaleTimeString();
+      logArea.textContent = `[${timestamp}] ${message}`;
+    }
+    
+    async function checkHealth() {
+      try {
+        setStatus('starting', 'Checking Brebot backend...');
+        const response = await invoke('check_backend_health');
+        const data = JSON.parse(response);
+        setStatus('ready', 'Brebot is online! PWA Dashboard ready...');
+        
+        // Hide loading elements when dashboard is ready
+        setTimeout(async () => {
+          const controls = document.querySelector('.controls');
+          const progressSection = document.querySelector('.progress-section');
+          if (controls) controls.style.display = 'none';
+          if (progressSection) progressSection.style.display = 'none';
+          
+          // Navigate directly to dashboard
+          try {
+            await invoke('navigate_to_dashboard');
+            console.log('Auto-navigating to dashboard');
+          } catch (error) {
+            console.error('Auto-navigation failed, falling back to iframe:', error);
+            // Fallback to iframe approach
+            const embed = document.getElementById('dashboard-embed');
+            if (embed) {
+              embed.style.display = 'block';
+              console.log('Auto-showing embedded dashboard');
+            }
+          }
+        }, 2000); // Wait 2 seconds for dashboard to load
+      } catch (error) {
+        setStatus('error', `Backend not reachable: ${error}`);
+      }
+    }
+    
+    // Button handlers
+    document.getElementById('launch-pwa').addEventListener('click', async () => {
+      try {
+        await invoke('open_pwa_in_chrome');
+      } catch (error) {
+        console.error('Failed to open PWA in Chrome:', error);
+        // Fallback to default browser
+        window.open(BREBOT_URL, '_blank');
+      }
+    });
+    
+    document.getElementById('embed-dashboard').addEventListener('click', async () => {
+      console.log('Navigate to dashboard clicked');
+      try {
+        await invoke('navigate_to_dashboard');
+        console.log('Navigation command sent');
+      } catch (error) {
+        console.error('Failed to navigate to dashboard:', error);
+        // Fallback to iframe approach
+        const controls = document.querySelector('.controls');
+        const embed = document.getElementById('dashboard-embed');
+        
+        if (controls) controls.style.display = 'none';
+        if (embed) embed.style.display = 'block';
+      }
+    });
+    
+    document.getElementById('close-embed').addEventListener('click', () => {
+      const controls = document.querySelector('.controls');
+      const embed = document.getElementById('dashboard-embed');
+      
+      if (controls) controls.style.display = 'block';
+      if (embed) embed.style.display = 'none';
+    });
+    
+    document.getElementById('refresh-dashboard').addEventListener('click', () => {
+      const iframe = document.getElementById('dashboard-frame');
+      const loadingIndicator = document.getElementById('loading-indicator');
+      
+      if (loadingIndicator) {
+        loadingIndicator.style.display = 'block';
+        loadingIndicator.innerHTML = '<div style="font-size: 1.2rem; color: #6b7280; margin-bottom: 1rem;">Refreshing Dashboard...</div><div style="width: 40px; height: 40px; border: 4px solid #e5e7eb; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>';
+      }
+      
+      if (iframe) {
+        iframe.src = iframe.src; // Refresh the iframe
+      }
+    });
+    
+    document.getElementById('refresh-status').addEventListener('click', () => {
+      checkHealth();
+    });
+    
+    document.getElementById('start-backend').addEventListener('click', async () => {
+      setStatus('starting', 'Launching backend...');
+      try {
+        await invoke('start_backend');
+        setStatus('starting', 'Backend launched, checking...');
+        setTimeout(() => checkHealth(), 2000);
+      } catch (error) {
+        setStatus('error', `Failed to start backend: ${error}`);
+      }
+    });
+    
+    document.getElementById('start-services').addEventListener('click', async () => {
+      setStatus('starting', 'Starting services...');
+      try {
+        await invoke('start_services');
+        setStatus('starting', 'Services started, checking...');
+        setTimeout(() => checkHealth(), 3000);
+      } catch (error) {
+        setStatus('error', `Failed to start services: ${error}`);
+      }
+    });
+    
+    // Auto-check on load
+    setTimeout(checkHealth, 1000);
+  </script>
+</body>
+</html>
