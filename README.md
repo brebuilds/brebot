@@ -9,21 +9,47 @@ A comprehensive AI agent system with a three-panel dashboard, ChromaDB integrati
 - Python 3.11+ (for local development)
 - 8GB+ RAM recommended
 
-### Launch the Complete System
+### Local Setup (CLI + API)
 ```bash
-# Make executable and run
-chmod +x launch-enhanced.sh
-./launch-enhanced.sh
+# 1. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 2. Install Brebot dependencies
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+
+# 3. Install Playwright browsers (needed for web automation tools)
+python3 -m playwright install
+
+# 4. Verify the CLI and services
+python3 src/main.py init      # prepares the crew
+python3 src/main.py health    # runs aggregated health checks
+
+# 5. Launch the FastAPI dashboard (optional)
+python3 src/main.py web --host 0.0.0.0 --port 8000
 ```
 
-This will start:
-- 🟢 **Ollama** (port 11434) - Local LLMs
-- 🟢 **OpenWebUI** (port 3000) - Chat interface  
-- 🟢 **ChromaDB** (port 8001) - Vector storage
-- 🟢 **Redis** (port 6379) - Message queue
-- 🟢 **Brebot Dashboard** (port 8000) - Main interface
-- 🟢 **Bot Services** - MockTopus, Airtable Logger, Shopify Publisher
-- 🟢 **Monitoring** - Grafana (port 3001), Prometheus (port 9090)
+You can run the automated helper instead of the manual steps above:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+### Start Backing Services with Docker (optional, recommended for full feature set)
+```bash
+docker compose -f docker/docker-compose.yml up -d chromadb redis
+
+# once services are up you can launch the dashboard or CLI commands
+python3 src/main.py health
+```
+
+This docker compose file also includes optional services (Ollama, OpenWebUI, bot workers, Grafana/Prometheus). Start them when you are ready:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
 
 ## 🎯 System Architecture
 
@@ -55,6 +81,11 @@ This will start:
 - **Process**: Photopea API integration for product mockups
 - **Output**: High-quality mockups for t-shirts, hoodies, etc.
 
+#### **Bot Architect Assistant** 🧠
+- **Purpose**: Guides you through new bot creation, suggesting departments, tools, and checklists
+- **Interface**: Available in the dashboard (Bot Architect modal) and via MCP tool `design_bot`
+- **Auto-Creation**: Can deploy the recommended bot instantly, preventing decision paralysis
+
 #### **Airtable Logger** 📋
 - **Purpose**: Data management and pipeline tracking
 - **Input**: Bot outputs and pipeline state
@@ -83,22 +114,41 @@ Dropbox Design File → MockTopus Bot → Photopea API → Airtable Log → Shop
 
 ### Local Development
 ```bash
-# Clone and setup
-cd /Users/bre/brebot
+git clone <repo>
+cd brebot
 
-# Install dependencies
-pip install -r requirements-enhanced.txt
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 -m playwright install
 
-# Start individual services
-python src/web/app_enhanced.py
+# Run unit tests
+pytest
+
+# Launch the FastAPI app locally
+python3 -m uvicorn src.web.app:app --reload --port 8000
 ```
 
 ### Docker Development
 ```bash
-# Build and run specific services
-docker-compose -f docker/docker-compose-complete.yml up -d chromadb redis
-docker-compose -f docker/docker-compose-complete.yml up -d brebot-web
+# Bring up core dependencies only
+docker compose -f docker/docker-compose.yml up -d chromadb redis
+
+# Bring up everything including optional bots/monitoring
+docker compose -f docker/docker-compose.yml up -d
 ```
+
+## 🤖 MCP Integration (Claude Desktop, VS Code MCP, etc.)
+
+Brebot includes a Model Context Protocol server so external LLM clients can drive bots, ingestion, and automation directly.
+
+- See `docs/MCP_SUPPORT.md` for the tool list and setup instructions.
+- Start the server when you need it:
+  ```bash
+  source venv/bin/activate
+  python -m src.mcp.brebot_mcp_server
+  ```
+- Add the command to your `claude_desktop_config.json` (example in the doc) to give Claude Desktop hands-on control of Brebot.
 
 ## 📊 Monitoring & Observability
 

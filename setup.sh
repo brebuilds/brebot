@@ -99,10 +99,22 @@ install_dependencies() {
     print_status "Installing Python dependencies..."
     
     # Upgrade pip
-    pip install --upgrade pip
+    python -m pip install --upgrade pip
     
     # Install requirements
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
+
+    # Install Playwright browsers if Playwright is available
+    if python -c "import importlib, sys; sys.exit(0 if importlib.util.find_spec('playwright') else 1)"; then
+        print_status "Installing Playwright browsers..."
+        if python -m playwright install; then
+            print_success "Playwright browsers installed"
+        else
+            print_warning "Playwright browser install failed. Run 'python -m playwright install' manually."
+        fi
+    else
+        print_warning "Playwright package not installed; skipping browser setup."
+    fi
     
     print_success "Python dependencies installed"
 }

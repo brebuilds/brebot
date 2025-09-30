@@ -17,9 +17,30 @@ function dashboardApp() {
         activePipelines: [],
         recentFiles: [],
         showUploadModal: false,
+        showSetupPanel: false,
+        powerStatus: null,
+        powerLoading: false,
+        ingestionHistory: [],
+        ingestionLoading: false,
+        uploadingIngestion: false,
+        dropActive: false,
         showMemoryManager: false,
         showBotEditor: false,
         showCreateBotModal: false,
+        showBotArchitectModal: false,
+        botArchitectLoading: false,
+        botArchitectForm: {
+            name: '',
+            goal: '',
+            description: '',
+            primary_tasks: '',
+            data_sources: '',
+            integrations: '',
+            success_metrics: '',
+            personality: '',
+            auto_create: false,
+        },
+        botArchitectResult: null,
         showToolManager: false,
         websocket: null,
         
@@ -209,9 +230,12 @@ function dashboardApp() {
             this.startPeriodicUpdates();
             this.applyDarkMode();
             this.loadConnections();
-            
-            // Add welcome message
-            this.addChatMessage('system', 'Welcome to Brebot Enhanced! I\'m your AI assistant. How can I help you today?');
+            this.fetchIngestionHistory();
+
+            // Add welcome message (only if no messages exist)
+            if (this.chatMessages.length === 0) {
+                this.addChatMessage('system', 'Hey there BreHuman! What\'s up?');
+            }
         },
         
         // Dark mode functions
@@ -262,35 +286,224 @@ function dashboardApp() {
                 }, 1000);
             }
         },
-        
-        // File ingestion methods
-        selectAllFiles() {
-            const allSelected = Object.values(this.selectedSources).every(Boolean);
-            Object.keys(this.selectedSources).forEach(key => {
-                this.selectedSources[key] = !allSelected;
-            });
+
+        // Bot architect helpers
+        resetBotArchitectForm() {
+            this.botArchitectForm = {
+                name: '',
+                goal: '',
+                description: '',
+                primary_tasks: '',
+                data_sources: '',
+                integrations: '',
+                success_metrics: '',
+                personality: '',
+                auto_create: false,
+            };
+            this.botArchitectResult = null;
         },
-        
-        startIngestion() {
-            if (this.selectedSourcesCount === 0) {
-                this.showNotification('Please select at least one source to ingest', 'warning');
+
+        openBotArchitect() {
+            this.resetBotArchitectForm();
+            this.showBotArchitectModal = true;
+        },
+
+        closeBotArchitect() {
+            this.showBotArchitectModal = false;
+        },
+
+        parseListInput(value) {
+            if (!value) return [];
+            return value
+                .split(/[,\n]/g)
+                .map(item => item.trim())
+                .filter(Boolean);
+        },
+
+        addBotToHierarchy(bot, departmentName = 'Automation') {
+            const normalizedId = bot.bot_id || bot.id;
+            let department = this.botHierarchy.find(d => d.name === departmentName);
+            if (!department) {
+                department = {
+                    name: departmentName,
+                    icon: 'fas fa-robot',
+                    status: 'healthy',
+                    expanded: true,
+                    bots: [],
+                };
+                this.botHierarchy.push(department);
+            }
+
+            const existing = department.bots.find(existingBot => existingBot.bot_id === normalizedId);
+            if (!existing) {
+                department.bots.push({
+                    bot_id: normalizedId,
+                    description: bot.description || '',
+                    responsibilities: Array.isArray(bot.responsibilities)
+                        ? bot.responsibilities.join('\n')
+                        : (bot.responsibilities || ''),
+                    status: bot.status || 'online',
+                    health_score: bot.health_score || 100,
+                    tasks_completed: bot.tasks_completed || 0,
+                    avatar: bot.avatar || null,
+                    tools: bot.tools || [],
+                });
+            }
+        },
+
+        async submitBotArchitect(autoCreate = false) {
+            if (!this.botArchitectForm.goal.trim()) {
+                this.showNotification('Please describe the bot\'s main goal.', 'error');
                 return;
             }
-            
-            this.showNotification('Starting ingestion process...', 'info');
-            // Simulate ingestion process
-            setTimeout(() => {
-                this.showNotification('Ingestion completed successfully!', 'success');
-                this.memoryStats.used += this.selectedSourcesCount * 10;
-                this.memoryUsage = Math.min(100, (this.memoryStats.used / this.memoryStats.total) * 100);
-            }, 3000);
+
+            this.botArchitectLoading = true;
+            try {
+                const payload = {
+                    goal: this.botArchitectForm.goal.trim(),
+                    description: this.botArchitectForm.description.trim() || null,
+                    name: this.botArchitectForm.name.trim() || null,
+                    primary_tasks: this.parseListInput(this.botArchitectForm.primary_tasks),
+                    data_sources: this.parseListInput(this.botArchitectForm.data_sources),
+                    integrations: this.parseListInput(this.botArchitectForm.integrations),
+                    success_metrics: this.parseListInput(this.botArchitectForm.success_metrics),
+                    personality: this.botArchitectForm.personality.trim() || null,
+                    auto_create: autoCreate || this.botArchitectForm.auto_create,
+                };
+
+                const response = await fetch('/api/bots/architect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to generate bot blueprint');
+                }
+
+                this.botArchitectResult = data;
+
+                if (data.created_bot) {
+                    this.addBotToHierarchy(data.created_bot, data.recommendation?.department);
+                    this.showNotification(`Bot "${data.created_bot.id || data.created_bot.bot_id}" created!`, 'success');
+                } else {
+                    this.showNotification('Bot blueprint ready', 'success');
+                }
+            } catch (error) {
+                console.error('Error designing bot:', error);
+                this.showNotification(error.message || 'Bot design failed', 'error');
+            } finally {
+                this.botArchitectLoading = false;
+            }
         },
         
-        clearQueue() {
-            Object.keys(this.selectedSources).forEach(key => {
-                this.selectedSources[key] = false;
-            });
-            this.showNotification('Queue cleared', 'info');
+        // Setup panel + ingestion
+        openSetupPanel() {
+            this.showSetupPanel = true;
+            this.fetchIngestionHistory();
+        },
+
+        closeSetupPanel() {
+            this.showSetupPanel = false;
+        },
+
+        async powerUpSystem() {
+            try {
+                this.powerLoading = true;
+                const response = await fetch('/api/system/power-up', { method: 'POST' });
+                this.powerStatus = await response.json();
+                if (!response.ok) {
+                    throw new Error('Power-up returned an error');
+                }
+                this.showNotification('System power-up complete!', 'success');
+            } catch (error) {
+                console.error('Error powering up system:', error);
+                this.showNotification('Failed to power up system', 'error');
+            } finally {
+                this.powerLoading = false;
+            }
+        },
+
+        async fetchIngestionHistory() {
+            try {
+                const response = await fetch('/api/ingest/runs');
+                if (!response.ok) return;
+                const data = await response.json();
+                this.ingestionHistory = data.runs || [];
+            } catch (error) {
+                console.error('Error loading ingestion history:', error);
+            }
+        },
+
+        async triggerIngestion(dryRun = false) {
+            try {
+                this.ingestionLoading = true;
+                const response = await fetch('/api/ingest/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dry_run: dryRun }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to start ingestion');
+                }
+                this.showNotification(dryRun ? 'Dry-run queued' : 'Ingestion started', 'success');
+            } catch (error) {
+                console.error('Error starting ingestion:', error);
+                this.showNotification('Failed to start ingestion', 'error');
+            } finally {
+                this.ingestionLoading = false;
+            }
+        },
+
+        async uploadIngestionFilesFromInput(event) {
+            const files = event.target.files ? Array.from(event.target.files) : [];
+            if (!files.length) return;
+            await this.uploadIngestionFiles(files);
+            event.target.value = '';
+        },
+
+        async uploadIngestionFiles(files) {
+            if (!files.length) return;
+            try {
+                this.uploadingIngestion = true;
+                const formData = new FormData();
+                files.forEach(file => formData.append('files', file, file.name));
+                const response = await fetch('/api/ingest/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Upload failed');
+                }
+                this.showNotification(`Uploaded ${data.saved_files.length} file(s)`, 'success');
+            } catch (error) {
+                console.error('Error uploading files:', error);
+                this.showNotification('Failed to upload files', 'error');
+            } finally {
+                this.uploadingIngestion = false;
+                this.dropActive = false;
+            }
+        },
+
+        handleDragOver(event) {
+            event.preventDefault();
+            this.dropActive = true;
+        },
+
+        handleDragLeave(event) {
+            event.preventDefault();
+            this.dropActive = false;
+        },
+
+        handleDrop(event) {
+            event.preventDefault();
+            this.dropActive = false;
+            const files = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
+            if (files.length) {
+                this.uploadIngestionFiles(files);
+            }
         },
         
         // Bot hierarchy methods
@@ -789,6 +1002,9 @@ function dashboardApp() {
             switch (data.type) {
                 case 'task_update':
                     this.updateTask(data.task);
+                    break;
+                case 'ingestion_runs':
+                    this.ingestionHistory = data.runs || [];
                     break;
                 case 'bot_response':
                     this.handleBotResponse(data);

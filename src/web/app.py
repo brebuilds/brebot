@@ -3,13 +3,14 @@ Enhanced Brebot Web Interface with Three-Panel Dashboard
 Integrates ChromaDB, Airtable, and Bot Management
 """
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+import logging
 import asyncio
 import json
 import uuid
@@ -20,13 +21,45 @@ import httpx
 import chromadb
 from chromadb.config import Settings
 
-# Import voice service
+# Shared utilities
+from utils import brebot_logger
+
+# Import voice service (optional)
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from services.voice_service import voice_service, VoiceEvent
+
+voice_service = None
+VoiceEvent = None
+VoiceConfig = None
+VOICE_SERVICE_ERROR: Optional[str] = None
+
+try:
+    from services.voice_service import voice_service as _voice_service, VoiceEvent as _VoiceEvent, VoiceConfig as _VoiceConfig
+
+    voice_service = _voice_service
+    VoiceEvent = _VoiceEvent
+    VoiceConfig = _VoiceConfig
+except Exception as exc:  # pragma: no cover - optional dependency failures
+    class VoiceEvent(BaseModel):  # type: ignore[no-redef]
+        type: str = "error"
+        transcript: Optional[str] = None
+        text: Optional[str] = None
+        audio_url: Optional[str] = None
+        bot_id: Optional[str] = None
+        action: Optional[Dict[str, Any]] = None
+
+    VOICE_SERVICE_ERROR = str(exc)
+    brebot_logger.log_error(exc, "web.app.voice_service_import")
+
 from services.connection_service import connection_service
+from services.memory_service import memoryService
+from services.bot_architect_service import botArchitectService, BotDesignSpec
 from models.connections import ConnectionEvent
 from config.system_prompts import get_chat_prompt
+from config import get_chroma_client, get_redis_client, airtable_available
+from services.ingestion_service import ingest_path, log_ingestion_run
+from services.workspace_service import ensure_workspace
+from config import settings
 
 # Enhanced app with full integration
 app = FastAPI(
@@ -71,6 +104,82 @@ class BotStatus(BaseModel):
 active_tasks: Dict[str, TaskStatus] = {}
 bot_statuses: Dict[str, BotStatus] = {}
 file_explorer_cache: Dict[str, Any] = {}
+ingestion_runs: List[Dict[str, Any]] = []  # legacy in-memory fallback
+
+INGESTION_REDIS_KEY = "brebot:ingestion:runs"
+MAX_INGESTION_RUNS = 100
+
+VOICE_SERVICE_AVAILABLE = voice_service is not None
+
+
+_redis_ingestion_error_logged = False
+
+
+def get_redis_connection():
+    """Return a cached Redis connection if available."""
+    global redis_client, _redis_ingestion_error_logged
+    if redis_client is not None:
+        return redis_client
+
+    try:
+        redis_client = get_redis_client()
+    except Exception as exc:  # pragma: no cover - connection failure
+        if not _redis_ingestion_error_logged:
+            brebot_logger.log_error(exc, "web.get_redis_connection")
+            _redis_ingestion_error_logged = True
+        redis_client = None
+
+    if redis_client is None:
+        _redis_ingestion_error_logged = True
+
+    return redis_client
+
+
+def persist_ingestion_run(entry: Dict[str, Any]) -> None:
+    """Persist a run record to Redis or fall back to in-memory storage."""
+    client = get_redis_connection()
+    if client is not None:
+        try:
+            client.lpush(INGESTION_REDIS_KEY, json.dumps(entry))
+            client.ltrim(INGESTION_REDIS_KEY, 0, MAX_INGESTION_RUNS - 1)
+            return
+        except Exception as exc:  # pragma: no cover - redis failure
+            brebot_logger.log_error(exc, "web.persist_ingestion_run")
+
+    ingestion_runs.insert(0, entry)
+    del ingestion_runs[MAX_INGESTION_RUNS:]
+
+
+def load_recent_ingestion_runs(limit: int = 25) -> List[Dict[str, Any]]:
+    """Retrieve recent ingestion runs from Redis or fallback storage."""
+    client = get_redis_connection()
+    if client is not None:
+        try:
+            raw_runs = client.lrange(INGESTION_REDIS_KEY, 0, limit - 1)
+            runs: List[Dict[str, Any]] = []
+            for raw in raw_runs:
+                try:
+                    runs.append(json.loads(raw))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+            if runs:
+                return runs
+        except Exception as exc:  # pragma: no cover - redis failure
+            brebot_logger.log_error(exc, "web.load_recent_ingestion_runs")
+
+    return ingestion_runs[:limit]
+
+
+def ensure_voice_service_ready() -> None:
+    """Ensure voice service is available before handling voice endpoints."""
+    if voice_service is None:
+        detail = "Voice service is currently unavailable"
+        if VOICE_SERVICE_ERROR:
+            detail = f"Voice service unavailable: {VOICE_SERVICE_ERROR}"
+        raise HTTPException(status_code=503, detail=detail)
+
+WORKSPACE_ROOT = Path.home() / "BrebotWorkspace"
+INGEST_DROP_PATH = WORKSPACE_ROOT / "Inbox" / "ingest"
 
 # WebSocket manager
 class ConnectionManager:
@@ -98,6 +207,23 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+
+async def broadcast_task_update(task_id: str, task: TaskStatus) -> None:
+    await manager.broadcast(
+        json.dumps(
+            {
+                "type": "task_update",
+                "task_id": task_id,
+                "task": task.model_dump(mode="json"),
+            }
+        )
+    )
+
+
+async def broadcast_ingestion_runs() -> None:
+    runs = load_recent_ingestion_runs()
+    await manager.broadcast(json.dumps({"type": "ingestion_runs", "runs": runs}))
+
 # Pydantic Models
 class ChatMessage(BaseModel):
     message: str
@@ -118,6 +244,28 @@ class PipelineRequest(BaseModel):
     pipeline_type: str  # design-to-shopify, content-creation, etc.
     input_data: Dict[str, Any]
     priority: str = "normal"
+
+
+class IngestionRequest(BaseModel):
+    path: Optional[str] = None
+    domain: Optional[str] = None
+    project: Optional[str] = None
+    source_type: str = "chat_history"
+    tags: List[str] = []
+    dry_run: bool = False
+    no_archive: bool = False
+
+
+class BotDesignRequest(BaseModel):
+    goal: str
+    description: Optional[str] = None
+    name: Optional[str] = None
+    primary_tasks: List[str] = []
+    data_sources: List[str] = []
+    integrations: List[str] = []
+    success_metrics: List[str] = []
+    personality: Optional[str] = None
+    auto_create: bool = False
 
 # Initialize services
 async def initialize_services():
@@ -186,14 +334,26 @@ async def read_root(request: Request):
 @app.get("/api/health")
 async def health_check():
     """Comprehensive health check for all services"""
-    services = {
-        "web_interface": "running",
-        "ollama": await check_service("http://localhost:11434/api/tags"),
-        "openwebui": await check_service("http://localhost:3000/health"),
-        "chromadb": await check_service("http://localhost:8001/api/v1/heartbeat"),
-        "redis": await check_redis_health(),
-        "docker": await check_docker_health()
+    import asyncio
+    
+    # Run all health checks in parallel for faster response
+    services_tasks = {
+        "web_interface": asyncio.create_task(asyncio.sleep(0, "running")),
+        "ollama": asyncio.create_task(check_service("http://localhost:11434/api/tags")),
+        "openwebui": asyncio.create_task(check_service("http://localhost:3000/health")),
+        "chromadb": asyncio.create_task(check_service("http://localhost:8001/api/v1/heartbeat")),
+        "redis": asyncio.create_task(check_redis_health()),
+        "docker": asyncio.create_task(check_docker_health()),
+        "voice_service": asyncio.create_task(asyncio.sleep(0, "running" if VOICE_SERVICE_AVAILABLE else "unavailable")),
     }
+    
+    # Wait for all tasks to complete
+    services = {}
+    for name, task in services_tasks.items():
+        try:
+            services[name] = await task
+        except Exception as e:
+            services[name] = "error"
     
     overall_status = "healthy" if all(
         status in ["running", "healthy"] for status in services.values()
@@ -204,7 +364,8 @@ async def health_check():
         "message": "Brebot Enhanced System Status",
         "timestamp": datetime.now(),
         "services": services,
-        "bots": {bot_id: bot.dict() for bot_id, bot in bot_statuses.items()}
+        "bots": {bot_id: bot.dict() for bot_id, bot in bot_statuses.items()},
+        "voice_error": VOICE_SERVICE_ERROR,
     }
 
 @app.get("/api/bots")
@@ -222,11 +383,32 @@ async def get_bot_health(bot_id: str):
     bot = bot_statuses[bot_id]
     return bot.dict()
 
+
+@app.post("/api/bots/architect")
+async def design_bot(request: BotDesignRequest):
+    """Generate a bot design recommendation and optionally create it."""
+    spec = BotDesignSpec(
+        goal=request.goal,
+        description=request.description,
+        name=request.name,
+        primary_tasks=request.primary_tasks,
+        data_sources=request.data_sources,
+        integrations=request.integrations,
+        success_metrics=request.success_metrics,
+        personality=request.personality,
+        auto_create=request.auto_create,
+    )
+
+    result = await botArchitectService.design_bot(spec)
+    return result
+
 @app.post("/api/voice/configure")
 async def configure_bot_voice(bot_id: str, voice_config: dict):
     """Configure voice settings for a bot."""
+    ensure_voice_service_ready()
     try:
-        from services.voice_service import VoiceConfig
+        if VoiceConfig is None or voice_service is None:
+            raise RuntimeError("Voice configuration unavailable")
         config = VoiceConfig(**voice_config)
         voice_service.set_bot_voice(bot_id, config)
         return {"status": "success", "message": f"Voice configured for bot {bot_id}"}
@@ -236,6 +418,9 @@ async def configure_bot_voice(bot_id: str, voice_config: dict):
 @app.get("/api/voice/config/{bot_id}")
 async def get_bot_voice_config(bot_id: str):
     """Get voice configuration for a bot."""
+    ensure_voice_service_ready()
+    if voice_service is None:
+        raise HTTPException(status_code=503, detail="Voice service unavailable")
     config = voice_service.get_bot_voice(bot_id)
     return {
         "bot_id": bot_id,
@@ -251,6 +436,9 @@ async def get_bot_voice_config(bot_id: str):
 async def process_voice_command(command: str, bot_id: str = "brebot"):
     """Process a voice command."""
     try:
+        ensure_voice_service_ready()
+        if voice_service is None:
+            raise RuntimeError("Voice service unavailable")
         result = await voice_service.process_voice_command(command, bot_id)
         return {"status": "success", "result": result}
     except Exception as e:
@@ -390,6 +578,85 @@ async def get_connection_events(connection_id: str):
         ]
     }
 
+
+@app.post("/api/system/power-up")
+async def system_power_up():
+    """Initiate system checks and ensure workspace structure exists."""
+    response = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "workspace": {},
+        "chroma": {},
+        "redis": {},
+        "airtable": {},
+    }
+
+    try:
+        ensure_workspace(WORKSPACE_ROOT)
+        response["workspace"] = {"status": "ready", "path": str(WORKSPACE_ROOT)}
+    except Exception as exc:
+        response["workspace"] = {"status": "error", "message": str(exc)}
+
+    try:
+        client = get_chroma_client()
+        client.list_collections()
+        response["chroma"] = {"status": "ready"}
+    except Exception as exc:
+        response["chroma"] = {"status": "error", "message": str(exc)}
+
+    try:
+        redis_client = get_redis_client()
+        if redis_client:
+            redis_client.ping()
+            response["redis"] = {"status": "ready"}
+        else:
+            response["redis"] = {"status": "unknown", "message": "Redis client not configured"}
+    except Exception as exc:
+        response["redis"] = {"status": "error", "message": str(exc)}
+
+    response["airtable"] = {
+        "status": "ready" if airtable_available() else "not_configured"
+    }
+
+    return response
+
+
+@app.post("/api/ingest/upload")
+async def upload_ingestion_files(files: List[UploadFile] = File(...)):
+    """Upload files into the inbox drop zone and start ingestion."""
+    ensure_workspace(WORKSPACE_ROOT)
+    drop_path = INGEST_DROP_PATH
+    drop_path.mkdir(parents=True, exist_ok=True)
+
+    saved_files = []
+    for upload in files:
+        content = await upload.read()
+        destination = drop_path / upload.filename
+        destination.write_bytes(content)
+        saved_files.append(upload.filename)
+
+    job_id = str(uuid.uuid4())
+    request = IngestionRequest(path=str(drop_path))
+    asyncio.create_task(execute_ingestion_job(job_id, request))
+
+    return {
+        "task_id": job_id,
+        "saved_files": saved_files,
+    }
+
+
+@app.post("/api/ingest/run")
+async def run_ingestion(request: IngestionRequest):
+    """Trigger ingestion for the specified path (defaults to inbox)."""
+    job_id = str(uuid.uuid4())
+    asyncio.create_task(execute_ingestion_job(job_id, request))
+    return {"task_id": job_id}
+
+
+@app.get("/api/ingest/runs")
+async def get_ingestion_runs():
+    """Return recent ingestion runs."""
+    return {"runs": load_recent_ingestion_runs()}
+
 @app.post("/api/chat")
 async def chat_with_brebot(message: ChatMessage, background_tasks: BackgroundTasks):
     """Chat with Brebot using RAG from ChromaDB"""
@@ -513,6 +780,10 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.websocket("/ws/voice")
 async def voice_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for voice communication."""
+    if voice_service is None:
+        await websocket.close(code=1011, reason="Voice service unavailable")
+        return
+
     await websocket.accept()
     
     session_id = str(uuid.uuid4())
@@ -521,7 +792,8 @@ async def voice_websocket_endpoint(websocket: WebSocket):
         # Start voice session
         await voice_service.start_realtime_session(session_id, websocket)
     except WebSocketDisconnect:
-        await voice_service.close_session(session_id)
+        if voice_service:
+            await voice_service.close_session(session_id)
     except Exception as e:
         logging.error(f"Error in voice WebSocket: {e}")
         await websocket.close()
@@ -541,8 +813,137 @@ def handle_voice_event(event: VoiceEvent):
         # Log transcripts
         print(f"Voice transcript: {event.transcript}")
 
-# Register voice event handler
-voice_service.add_event_handler(handle_voice_event)
+# Register voice event handler if voice service available
+if voice_service:
+    voice_service.add_event_handler(handle_voice_event)
+
+
+async def execute_ingestion_job(job_id: str, request: IngestionRequest) -> None:
+    ensure_workspace(WORKSPACE_ROOT)
+    drop_path = Path(request.path).expanduser().resolve() if request.path else INGEST_DROP_PATH
+    drop_path.mkdir(parents=True, exist_ok=True)
+
+    task = TaskStatus(
+        task_id=job_id,
+        status="running",
+        message="Embedding files into Brebot's memory...",
+        progress=0,
+        created_at=datetime.now(),
+        bot_id="ingestion",
+    )
+    active_tasks[job_id] = task
+    await broadcast_task_update(job_id, task)
+
+    run_id = f"ingest_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+
+    try:
+        task.message = "Scanning files..."
+        await broadcast_task_update(job_id, task)
+
+        result = await ingest_path(
+            target=drop_path,
+            workspace=WORKSPACE_ROOT,
+            domain=request.domain,
+            project=request.project,
+            source_type=request.source_type,
+            extra_tags=request.tags,
+            chunk_size=settings.chunk_size,
+            overlap=settings.chunk_overlap,
+            dry_run=request.dry_run,
+            no_archive=request.no_archive,
+        )
+
+        if result.get("status") != "empty" and not request.dry_run:
+            log_ingestion_run(run_id, result, request.source_type)
+
+        entry = {
+            "run_id": run_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "domain": result.get("domain"),
+            "project": result.get("project"),
+            "status": result.get("status"),
+            "files_processed": result.get("files_processed"),
+            "chunks": result.get("chunks"),
+            "dry_run": result.get("dry_run"),
+        }
+        persist_ingestion_run(entry)
+
+        task.progress = 100
+        task.status = "completed" if result.get("status") == "success" else "not_found"
+        task.message = (
+            "Ingestion completed" if result.get("status") == "success" else "No files found to ingest"
+        )
+        task.result = {"run_id": run_id, **result}
+        task.completed_at = datetime.now()
+    except Exception as exc:
+        brebot_logger.log_error(exc, "web.execute_ingestion_job")
+        task.status = "failed"
+        task.message = f"Error: {exc}"
+        task.completed_at = datetime.now()
+        task.result = {"error": str(exc)}
+        persist_ingestion_run(
+            {
+                "run_id": run_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "failed",
+                "files_processed": 0,
+                "chunks": 0,
+                "domain": request.domain,
+                "project": request.project,
+                "dry_run": request.dry_run,
+                "error": str(exc),
+            }
+        )
+    finally:
+        await broadcast_task_update(job_id, task)
+        await broadcast_ingestion_runs()
+
+def parse_chat_context(context: Optional[str]) -> tuple[Optional[str], Optional[str], List[str]]:
+    """Parse chat context string into domain/project/tag hints."""
+    domain: Optional[str] = None
+    project: Optional[str] = None
+    tags: List[str] = []
+
+    if not context:
+        return domain, project, tags
+
+    separators = ["|", ","]
+    tokens = [context]
+    for sep in separators:
+        tokens = [subtoken for token in tokens for subtoken in token.split(sep)]
+
+    for token in tokens:
+        token = token.strip()
+        if not token:
+            continue
+        if "=" in token:
+            key, value = [part.strip() for part in token.split("=", 1)]
+            key_lower = key.lower()
+            if key_lower == "domain":
+                domain = value or domain
+            elif key_lower == "project":
+                project = value or project
+            elif key_lower in {"tag", "tags"}:
+                tags.extend(v.strip() for v in value.split("/") if v.strip())
+            else:
+                tags.append(value)
+        elif "/" in token:
+            parts = [part.strip() for part in token.split("/", 1)]
+            if len(parts) == 2:
+                domain = domain or parts[0]
+                project = project or parts[1]
+        else:
+            tags.append(token)
+
+    # Deduplicate tags while preserving order
+    seen: set[str] = set()
+    unique_tags: List[str] = []
+    for tag in tags:
+        if tag and tag not in seen:
+            unique_tags.append(tag)
+            seen.add(tag)
+
+    return domain, project, unique_tags
 
 # Background task processors
 async def process_chat_task(task_id: str, message: ChatMessage):
@@ -560,40 +961,99 @@ async def process_chat_task(task_id: str, message: ChatMessage):
         # Get the system prompt for chat
         system_prompt = get_chat_prompt()
         
-        # Simulate RAG processing
-        await asyncio.sleep(2)
-        
-        # In a real implementation, this would:
-        # 1. Query ChromaDB for relevant context
-        # 2. Send to Ollama with context and system prompt
-        # 3. Return response
-        
-        task.progress = 50
-        task.message = "Retrieving relevant context..."
+        # Retrieve context from memory service if enabled
+        context_domain, context_project, context_tags = parse_chat_context(message.context)
+        rag_results: List[Dict[str, Any]] = []
+        if message.use_rag:
+            try:
+                search_response = await memoryService.search(
+                    query=message.message,
+                    k=settings.top_k_results,
+                    tags=context_tags or None,
+                    domain=context_domain,
+                    project=context_project,
+                )
+                if search_response.get("status") == "success":
+                    rag_results = search_response.get("results", [])
+            except Exception as exc:  # pragma: no cover - runtime safety
+                brebot_logger.log_error(exc, "web.process_chat_task.rag")
+
+        task.progress = 50 if message.use_rag else 20
+        task.message = "Retrieving relevant context..." if message.use_rag else "Drafting response..."
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
-        
-        await asyncio.sleep(2)
-        
+
+        # Generate response using Ollama with BreBot v2.0
+        try:
+            import httpx
+            
+            # Prepare context from RAG results
+            context_text = ""
+            if rag_results:
+                context_text = "\n\nRelevant context from your knowledge base:\n"
+                for idx, result in enumerate(rag_results[:3], start=1):
+                    summary = result.get("summary", "")
+                    snippet = summary[:200] + ("…" if len(summary) > 200 else "")
+                    source_meta = result.get("metadata", {}) or {}
+                    label = source_meta.get("source_path") or source_meta.get("project") or f"memory_{idx}"
+                    context_text += f"{idx}. {label}: {snippet}\n"
+            
+            # Prepare the full prompt
+            full_prompt = f"{system_prompt}\n\nUser message: {message.message}{context_text}"
+            
+            # Call Ollama API
+            async with httpx.AsyncClient() as client:
+                ollama_response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": full_prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                            "max_tokens": 1000
+                        }
+                    },
+                    timeout=60.0
+                )
+                
+                if ollama_response.status_code == 200:
+                    ollama_data = ollama_response.json()
+                    response_text = ollama_data.get("response", "I'm having trouble generating a response right now.")
+                else:
+                    response_text = "I'm having trouble connecting to my AI brain right now. Let me try again!"
+                    
+        except Exception as e:
+            brebot_logger.log_error(e, "web.process_chat_task.ollama")
+            response_text = "I'm having a bit of a brain freeze right now, but I'm still here to help! What else can I do for you?"
+
         task.progress = 100
         task.status = "completed"
         task.message = "Chat response generated"
         task.result = {
-            "response": f"Based on your query '{message.message}', here's what I found in the knowledge base...",
-            "sources": ["design_guidelines.pdf", "brand_standards.docx"],
-            "confidence": 0.92
+            "response": response_text,
+            "sources": rag_results,
+            "context_filters": {
+                "domain": context_domain,
+                "project": context_project,
+                "tags": context_tags,
+            },
+            "confidence": 0.85 if rag_results else 0.4,
+            "model_used": settings.ollama_model,
+            "rag_enabled": message.use_rag,
         }
         task.completed_at = datetime.now()
         
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
-        
+
     except Exception as e:
         task.status = "failed"
         task.message = f"Error: {str(e)}"
@@ -602,7 +1062,7 @@ async def process_chat_task(task_id: str, message: ChatMessage):
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
 
 async def process_file_operation(task_id: str, operation: FileOperation):
@@ -634,7 +1094,7 @@ async def process_file_operation(task_id: str, operation: FileOperation):
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
         
     except Exception as e:
@@ -645,7 +1105,7 @@ async def process_file_operation(task_id: str, operation: FileOperation):
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
 
 async def process_pipeline(task_id: str, pipeline: PipelineRequest):
@@ -670,7 +1130,7 @@ async def process_pipeline(task_id: str, pipeline: PipelineRequest):
             await manager.broadcast(json.dumps({
                 "type": "task_update",
                 "task_id": task_id,
-                "task": task.dict()
+                "task": task.model_dump(mode="json"),
             }))
             
             await asyncio.sleep(2)
@@ -688,7 +1148,7 @@ async def process_pipeline(task_id: str, pipeline: PipelineRequest):
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
         
     except Exception as e:
@@ -699,7 +1159,7 @@ async def process_pipeline(task_id: str, pipeline: PipelineRequest):
         await manager.broadcast(json.dumps({
             "type": "task_update",
             "task_id": task_id,
-            "task": task.dict()
+            "task": task.model_dump(mode="json"),
         }))
 
 async def handle_bot_command(message: dict, websocket: WebSocket):
@@ -744,7 +1204,7 @@ async def check_service(url: str) -> str:
     """Check if a service is running"""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=5)
+            response = await client.get(url, timeout=2)
             return "healthy" if response.status_code == 200 else "unhealthy"
     except:
         return "unreachable"
@@ -762,7 +1222,7 @@ async def check_redis_health() -> str:
 async def check_docker_health() -> str:
     """Check Docker health"""
     try:
-        result = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=2)
         return "healthy" if result.returncode == 0 else "unhealthy"
     except:
         return "unreachable"

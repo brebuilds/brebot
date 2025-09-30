@@ -9,6 +9,8 @@ from .memory_service import memoryService
 from .inbox_service import inboxService
 from .meeting_service import meetingService
 from .bot_service import botService
+from .bot_architect_service import botArchitectService
+from .bot_architect_service import botArchitectService
 from .creative_service import creativeService
 from .system_service import systemService
 from .business_service import businessService
@@ -23,6 +25,8 @@ __all__ = [
     "inboxService",
     "meetingService",
     "botService",
+    "botArchitectService",
+    "botArchitectService",
     "creativeService",
     "systemService",
     "businessService",

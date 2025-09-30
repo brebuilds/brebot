@@ -4,6 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="application-name" content="Brebot">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Brebot">
+    <meta name="description" content="AI-powered knowledge management and bot organization platform">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="msapplication-config" content="/static/icons/browserconfig.xml">
+    <meta name="msapplication-TileColor" content="#3b82f6">
+    <meta name="msapplication-tap-highlight" content="no">
+    <meta name="theme-color" content="#3b82f6">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/static/manifest.json">
+    
+    <!-- Icons -->
+    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png">
+    <link rel="shortcut icon" href="/static/icons/favicon.ico">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -78,7 +101,7 @@
         }
         
         .panel {
-            height: calc(100vh - 5rem);
+            height: calc(100vh - 6rem);
             overflow-y: auto;
             backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.95);
@@ -215,6 +238,11 @@
                     </div>
                 </div>
                 <div class="flex items-center space-x-4">
+                    <!-- Setup Panel Toggle -->
+                    <button @click="openSetupPanel()" class="px-3 py-2 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-all duration-200 flex items-center">
+                        <i class="fas fa-rocket mr-2"></i>
+                        Setup
+                    </button>
                     <!-- System Status -->
                     <div class="flex items-center space-x-2">
                         <div class="w-3 h-3 rounded-full shadow-lg" :class="{
@@ -243,7 +271,7 @@
     <!-- Main Dashboard -->
     <div class="flex flex-col lg:flex-row h-screen p-2 sm:p-4 gap-2 sm:gap-4">
         <!-- Left Panel: File Explorer -->
-        <div class="w-full lg:w-1/4 panel rounded-xl shadow-xl order-2 lg:order-1">
+        <div class="w-full lg:w-1/3 panel rounded-xl shadow-xl order-2 lg:order-1">
             <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center mb-4">
                     <i class="fas fa-brain mr-3 text-primary-500"></i>
@@ -387,7 +415,7 @@
         </div>
 
         <!-- Middle Panel: Chat with Brebot -->
-        <div class="w-full lg:w-1/2 panel rounded-xl shadow-xl order-1 lg:order-2">
+        <div class="w-full lg:w-1/3 panel rounded-xl shadow-xl order-1 lg:order-2">
             <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
@@ -409,7 +437,7 @@
             </div>
 
             <!-- Chat Messages -->
-            <div class="flex-1 p-6 overflow-y-auto" style="height: calc(100% - 140px);">
+            <div class="flex-1 p-6 overflow-y-auto" style="height: calc(100vh - 200px);">
                 <div class="space-y-4">
                     <template x-for="message in chatMessages" :key="message.id">
                         <div class="chat-message animate-slide-up" :class="message.sender === 'user' ? 'flex justify-end' : 'flex justify-start'">
@@ -445,16 +473,21 @@
         </div>
 
         <!-- Right Panel: Bot Organization -->
-        <div class="w-full lg:w-1/4 panel rounded-xl shadow-xl order-3">
+        <div class="w-full lg:w-1/3 panel rounded-xl shadow-xl order-3">
             <div class="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
                 <div class="flex items-center justify-between mb-3">
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
                         <i class="fas fa-sitemap mr-3 text-purple-500"></i>
                         Bot Organization
                     </h2>
-                    <button @click="showCreateBotModal = true" class="px-3 py-1 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-all duration-200 flex items-center">
-                        <i class="fas fa-plus mr-1"></i>New Bot
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        <button @click="openBotArchitect()" class="px-3 py-1 text-xs bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all duration-200 flex items-center">
+                            <i class="fas fa-magic mr-1"></i>Bot Architect
+                        </button>
+                        <button @click="showCreateBotModal = true" class="px-3 py-1 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-all duration-200 flex items-center">
+                            <i class="fas fa-plus mr-1"></i>New Bot
+                        </button>
+                    </div>
                 </div>
                 <div class="text-sm text-gray-500 dark:text-gray-400">
                     <span class="font-semibold text-accent-600 dark:text-accent-400" x-text="onlineBots"></span> online, 
@@ -550,6 +583,122 @@
         </div>
     </div>
 
+    <!-- Setup Overlay -->
+    <div x-show="showSetupPanel" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" x-transition>
+        <div class="bg-white dark:bg-gray-900 shadow-2xl rounded-2xl w-full max-w-3xl mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-primary-500 to-accent-500 text-white">
+                <div>
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-rocket mr-3"></i>
+                        Brebot Power-Up & Ingestion
+                    </h2>
+                    <p class="text-sm text-white/80">Initialize services and feed Brebot your latest knowledge drops.</p>
+                </div>
+                <button @click="closeSetupPanel()" class="text-white/80 hover:text-white transition"><i class="fas fa-times text-lg"></i></button>
+            </div>
+
+            <div class="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                <section class="p-5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                                <i class="fas fa-bolt mr-2 text-accent-500"></i>
+                                System Power-Up
+                            </h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Check services, ensure the workspace exists, and confirm integrations.</p>
+                        </div>
+                        <button @click="powerUpSystem()" :disabled="powerLoading" class="px-4 py-2 rounded-lg bg-accent-500 text-white font-semibold shadow hover:bg-accent-600 disabled:opacity-60">
+                            <span x-show="!powerLoading"><i class="fas fa-play mr-2"></i>Run Power-Up</span>
+                            <span x-show="powerLoading" class="flex items-center"><i class="fas fa-spinner animate-spin mr-2"></i>Working...</span>
+                        </button>
+                    </div>
+                    <div x-show="powerStatus" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <template x-for="(value, key) in {workspace: powerStatus.workspace, chroma: powerStatus.chroma, redis: powerStatus.redis, airtable: powerStatus.airtable}" :key="key">
+                            <div class="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-start">
+                                <div class="w-2 h-2 rounded-full mt-1 mr-3" :class="{
+                                    'bg-green-500': value?.status === 'ready',
+                                    'bg-yellow-400': value?.status === 'warning' || value?.status === 'unknown',
+                                    'bg-red-500': value?.status === 'error' || value?.status === 'not_configured'
+                                }"></div>
+                                <div>
+                                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200 capitalize" x-text="key"></div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400" x-text="value?.status || 'n/a'"></div>
+                                    <div class="text-xs text-red-500" x-show="value?.message" x-text="value.message"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </section>
+
+                <section class="p-5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40" @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave" @drop="handleDrop($event)">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                                <i class="fas fa-cloud-upload-alt mr-2 text-primary-500"></i>
+                                Knowledge Drop Zone
+                            </h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Drag & drop exports or click to browse. Brebot auto-routes based on keywords.</p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button @click="$refs.ingestFileInput.click()" class="px-3 py-2 text-xs rounded-lg bg-primary-500 text-white hover:bg-primary-600 transition">Browse Files</button>
+                            <button @click="triggerIngestion(false)" :disabled="ingestionLoading" class="px-3 py-2 text-xs rounded-lg bg-accent-500 text-white hover:bg-accent-600 transition disabled:opacity-60">
+                                <span x-show="!ingestionLoading"><i class="fas fa-play mr-1"></i>Start Ingestion</span>
+                                <span x-show="ingestionLoading"><i class="fas fa-spinner animate-spin mr-2"></i>Starting...</span>
+                            </button>
+                            <button @click="triggerIngestion(true)" class="px-3 py-2 text-xs rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition">
+                                <i class="fas fa-eye mr-1"></i>Dry Run
+                            </button>
+                        </div>
+                    </div>
+
+                    <div :class="dropActive ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20' : 'border-dashed border-gray-300 dark:border-gray-600'" class="border-2 rounded-xl p-6 text-center transition-all duration-200">
+                        <div class="flex flex-col items-center text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-cloud-upload-alt text-3xl mb-3"></i>
+                            <p class="text-sm">Drop files here or click <span class="text-primary-500 dark:text-primary-300">Browse Files</span></p>
+                            <p class="text-xs mt-1">Supported: .txt, .md, .json, .csv</p>
+                            <p class="text-xs mt-2 text-gray-400">Files land in Inbox/ingest, then archive to Inbox/processed after ingestion.</p>
+                        </div>
+                        <input type="file" multiple class="hidden" x-ref="ingestFileInput" @change="uploadIngestionFilesFromInput">
+                    </div>
+                </section>
+
+                <section class="p-5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/60">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                            <i class="fas fa-list mr-2 text-primary-500"></i>
+                            Recent Ingestion Runs
+                        </h3>
+                        <button @click="fetchIngestionHistory" class="text-xs text-primary-500 hover:underline"><i class="fas fa-sync-alt mr-1"></i>Refresh</button>
+                    </div>
+                    <div x-show="ingestionHistory.length === 0" class="text-sm text-gray-500 dark:text-gray-400">No ingestion runs yet. Drop some files to get started!</div>
+                    <div class="space-y-3" x-show="ingestionHistory.length > 0">
+                        <template x-for="run in ingestionHistory" :key="run.run_id">
+                            <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/60">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-900 dark:text-gray-100" x-text="run.run_id"></div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400" x-text="new Date(run.timestamp).toLocaleString()"></div>
+                                    </div>
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium" :class="{
+                                        'bg-green-100 text-green-700': run.status === 'success',
+                                        'bg-yellow-100 text-yellow-700': run.status === 'mixed' || run.status === 'not_found',
+                                        'bg-red-100 text-red-700': run.status === 'failed',
+                                        'bg-gray-100 text-gray-600': run.dry_run
+                                    }" x-text="run.dry_run ? 'dry run' : run.status"></span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3 text-xs text-gray-600 dark:text-gray-300">
+                                    <div>Domain: <span class="font-semibold" x-text="run.domain || '—'"></span></div>
+                                    <div>Project: <span class="font-semibold" x-text="run.project || '—'"></span></div>
+                                    <div>Chunks: <span class="font-semibold" x-text="run.chunks"></span></div>
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-2">Files processed: <span x-text="run.files_processed"></span></div>
+                            </div>
+                        </template>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
     <!-- Upload Modal -->
     <div x-show="showUploadModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-lg p-6 w-96">
@@ -883,6 +1032,128 @@
         </div>
     </div>
 
+    <!-- Bot Architect Modal -->
+    <div x-show="showBotArchitectModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[92vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        <i class="fas fa-hat-wizard mr-2 text-purple-500"></i>
+                        Bot Architect
+                    </h3>
+                    <button @click="closeBotArchitect" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Describe the bot you need and Brebot will suggest a configuration, tools, and setup checklist. You can create it instantly or refine the blueprint first.</p>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100">Bot Brief</h4>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot Name</label>
+                            <input x-model="botArchitectForm.name" placeholder="Optional friendly name" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary Goal *</label>
+                            <textarea x-model="botArchitectForm.goal" rows="2" placeholder="Explain what the bot should achieve" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Context</label>
+                            <textarea x-model="botArchitectForm.description" rows="3" placeholder="Any additional background or constraints" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Key Tasks</label>
+                                <textarea x-model="botArchitectForm.primary_tasks" rows="4" placeholder="One per line or comma separated" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Data Sources</label>
+                                <textarea x-model="botArchitectForm.data_sources" rows="4" placeholder="e.g., Dropbox, Notion, Airtable" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Integrations</label>
+                                <textarea x-model="botArchitectForm.integrations" rows="3" placeholder="Tools, APIs, automations" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Success Metrics</label>
+                                <textarea x-model="botArchitectForm.success_metrics" rows="3" placeholder="How you\'ll measure success" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"></textarea>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Personality & Tone</label>
+                            <input x-model="botArchitectForm.personality" placeholder="e.g., Friendly project manager" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input id="architect-auto-create" type="checkbox" x-model="botArchitectForm.auto_create" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                            <label for="architect-auto-create" class="text-sm text-gray-600 dark:text-gray-400">Create the bot automatically after generating the blueprint</label>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h4 class="font-medium text-gray-900 dark:text-gray-100">Blueprint</h4>
+                        <div class="p-4 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/30" x-show="!botArchitectResult">
+                            <p class="text-sm text-gray-500 dark:text-gray-400" x-show="!botArchitectLoading">Fill out the brief and click "Generate Blueprint" to preview the recommended configuration.</p>
+                            <div class="flex items-center space-x-2 text-primary-600" x-show="botArchitectLoading">
+                                <i class="fas fa-spinner animate-spin"></i>
+                                <span class="text-sm">Summoning the bot architect...</span>
+                            </div>
+                        </div>
+                        <div x-show="botArchitectResult" class="space-y-4">
+                            <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/40 shadow-sm">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h5 class="text-md font-semibold text-gray-900 dark:text-gray-100" x-text="botArchitectResult.recommendation.name || botArchitectResult.recommendation.bot_id"></h5>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="botArchitectResult.recommendation.department + ' • ' + botArchitectResult.recommendation.bot_type"></p>
+                                    </div>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-primary-100 text-primary-700" x-text="botArchitectResult.status === 'draft' ? 'Blueprint' : 'Created'"></span>
+                                </div>
+                                <p class="mt-3 text-sm text-gray-600 dark:text-gray-300" x-text="botArchitectResult.recommendation.description"></p>
+                                <div class="mt-4">
+                                    <h6 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Responsibilities</h6>
+                                    <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                                        <template x-for="task in botArchitectResult.recommendation.responsibilities" :key="task">
+                                            <li><i class="fas fa-check text-primary-500 mr-2"></i><span x-text="task"></span></li>
+                                        </template>
+                                    </ul>
+                                </div>
+                                <div class="mt-4">
+                                    <h6 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Suggested Tools</h6>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <template x-for="tool in botArchitectResult.recommendation.suggested_tools" :key="tool">
+                                            <span class="px-2 py-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-200 rounded-full" x-text="tool"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="mt-4" x-show="botArchitectResult.checklist?.length">
+                                    <h6 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Setup Checklist</h6>
+                                    <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                                        <template x-for="item in botArchitectResult.checklist" :key="item">
+                                            <li><i class="fas fa-list-check text-green-500 mr-2"></i><span x-text="item"></span></li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-3">
+                            <button @click="submitBotArchitect(false)" :disabled="botArchitectLoading" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-60">
+                                <span x-show="!botArchitectLoading"><i class="fas fa-lightbulb mr-2"></i>Generate Blueprint</span>
+                                <span x-show="botArchitectLoading"><i class="fas fa-spinner animate-spin mr-2"></i>Working...</span>
+                            </button>
+                            <button @click="submitBotArchitect(true)" :disabled="botArchitectLoading" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-60">
+                                <i class="fas fa-robot mr-2"></i>Generate & Create Bot
+                            </button>
+                            <button @click="resetBotArchitectForm" class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Reset</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Tool Manager Modal -->
     <div x-show="showToolManager" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-transition>
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1159,5 +1430,50 @@
 
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/voice-widget.js"></script>
+    
+    <!-- PWA Installation Script -->
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then((registration) => {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch((registrationError) => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+
+        // PWA Install Prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('PWA install prompt triggered');
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // Show install button
+            const installButton = document.createElement('button');
+            installButton.textContent = 'Install Brebot App';
+            installButton.className = 'fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            installButton.onclick = () => {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                    }
+                    deferredPrompt = null;
+                    installButton.remove();
+                });
+            };
+            document.body.appendChild(installButton);
+        });
+
+        // PWA Installed
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('PWA was installed');
+        });
+    </script>
 </body>
 </html>

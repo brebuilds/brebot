@@ -32,6 +32,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from brebot_crew import BrebotCrew
 from config.settings import settings
 from utils.logger import brebot_logger
+from services.bot_architect_service import botArchitectService, BotDesignSpec
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -107,6 +108,43 @@ async def list_tools() -> List[Tool]:
                     }
                 },
                 "required": ["bot_id", "bot_type", "description"]
+            }
+        ),
+        Tool(
+            name="design_bot",
+            description="Generate a bot blueprint and optional auto-creation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "description": "Primary objective for the bot"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Additional background or constraints"
+                    },
+                    "primary_tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Key responsibilities"
+                    },
+                    "data_sources": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Data sources the bot should use"
+                    },
+                    "integrations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Integrations or tools required"
+                    },
+                    "auto_create": {
+                        "type": "boolean",
+                        "description": "If true, create the bot after designing"
+                    }
+                },
+                "required": ["goal"]
             }
         ),
         Tool(
@@ -309,6 +347,8 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             return await handle_create_bot(arguments)
         elif name == "assign_task":
             return await handle_assign_task(arguments)
+        elif name == "design_bot":
+            return await handle_design_bot(arguments)
         elif name == "organize_files":
             return await handle_organize_files(arguments)
         elif name == "create_marketing_content":
@@ -444,6 +484,59 @@ async def handle_assign_task(arguments: Dict[str, Any]) -> List[TextContent]:
     )
     
     return [TextContent(type="text", text=result_text)]
+
+
+async def handle_design_bot(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Generate a bot blueprint via the architect service."""
+    goal = (arguments.get("goal") or "").strip()
+    if not goal:
+        return [TextContent(type="text", text="The 'goal' field is required to design a bot.")]
+
+    spec = BotDesignSpec(
+        goal=goal,
+        description=arguments.get("description"),
+        name=arguments.get("name"),
+        primary_tasks=arguments.get("primary_tasks") or [],
+        data_sources=arguments.get("data_sources") or [],
+        integrations=arguments.get("integrations") or [],
+        success_metrics=arguments.get("success_metrics") or [],
+        personality=arguments.get("personality"),
+        auto_create=bool(arguments.get("auto_create")),
+    )
+
+    result = await botArchitectService.design_bot(spec)
+    recommendation = result.get("recommendation", {})
+    checklist = result.get("checklist", [])
+    created_bot = result.get("created_bot")
+
+    lines = ["🤖 Bot Architect Blueprint", ""]
+    lines.append(f"Bot ID: {recommendation.get('bot_id', 'n/a')}")
+    lines.append(f"Department: {recommendation.get('department', 'Automation')}")
+    lines.append(f"Type: {recommendation.get('bot_type', 'text_processing')}")
+    lines.append(f"Description: {recommendation.get('description', goal)}")
+
+    responsibilities = recommendation.get('responsibilities') or []
+    if responsibilities:
+        lines.append("Responsibilities:")
+        for item in responsibilities:
+            lines.append(f"  • {item}")
+
+    tools = recommendation.get('suggested_tools') or []
+    if tools:
+        lines.append("Suggested tools: " + ", ".join(tools))
+
+    if checklist:
+        lines.append("")
+        lines.append("Setup checklist:")
+        for item in checklist:
+            lines.append(f"  ☐ {item}")
+
+    if created_bot:
+        lines.append("")
+        created_id = created_bot.get('id') or created_bot.get('bot_id')
+        lines.append(f"✅ Bot '{created_id}' created successfully.")
+
+    return [TextContent(type="text", text="\n".join(lines))]
 
 async def handle_organize_files(arguments: Dict[str, Any]) -> List[TextContent]:
     """Organize files using the file organizer bot."""
