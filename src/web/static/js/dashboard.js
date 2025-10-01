@@ -49,6 +49,37 @@ function dashboardApp() {
         connections: [],
         darkMode: localStorage.getItem('darkMode') === 'true',
         
+        // Code Editor
+        showCodeEditor: false,
+        showIntegrationsManager: false,
+        showPlatformConfig: false,
+        integrations: {},
+        integrationSummary: { total: 0, enabled: 0, healthy: 0 },
+        activityCount: 0,
+        selectedPlatform: null,
+        platformConfig: { api_key: '', enabled: true, shop_id: '', base_url: '' },
+        
+        // Theme Management
+        showThemeManager: false,
+        availableThemes: {},
+        selectedTheme: 'default',
+        customTheme: {
+            name: 'Custom Theme',
+            primary_color: '#3b82f6',
+            secondary_color: '#64748b',
+            accent_color: '#10b981',
+            background_color: '#ffffff',
+            text_color: '#1f2937',
+            font_family: 'Inter, system-ui, sans-serif',
+            logo_url: null,
+            custom_css: ''
+        },
+        codeFiles: [],
+        selectedFile: null,
+        fileModified: false,
+        monacoEditor: null,
+        currentFileContent: '',
+        
         // Memory management
         memoryUsage: 65,
         memoryStats: {
@@ -231,6 +262,7 @@ function dashboardApp() {
             this.applyDarkMode();
             this.loadConnections();
             this.fetchIngestionHistory();
+            this.refreshCodeFiles();
 
             // Add welcome message (only if no messages exist)
             if (this.chatMessages.length === 0) {
@@ -1147,6 +1179,15 @@ function dashboardApp() {
             this.addChatMessage('system', 'File explorer refreshed');
         },
         
+        async init() {
+            // Load initial data
+            await this.loadFiles();
+            await this.refreshIntegrations();
+            await this.loadThemes();
+            this.loadConnections();
+            this.loadBots();
+        },
+        
         async uploadFile() {
             // Simulate file upload
             this.showUploadModal = false;
@@ -1281,6 +1322,430 @@ function dashboardApp() {
             setInterval(() => {
                 this.loadActiveTasks();
             }, 10000);
+        },
+        
+        // Code Editor Methods
+        async refreshCodeFiles() {
+            try {
+                const response = await fetch('/api/code/browse');
+                const data = await response.json();
+                this.codeFiles = data.files;
+            } catch (error) {
+                console.error('Failed to load code files:', error);
+            }
+        },
+        
+        async loadCodeFile(filePath) {
+            try {
+                const response = await fetch(`/api/code/read/${encodeURIComponent(filePath)}`);
+                const data = await response.json();
+                
+                this.selectedFile = filePath;
+                this.currentFileContent = data.content;
+                this.fileModified = false;
+                
+                // Initialize Monaco editor if not already done and editor is visible
+                if (!this.monacoEditor && this.showCodeEditor) {
+                    // Wait a bit for the DOM to be ready
+                    setTimeout(() => this.initMonacoEditor(), 200);
+                } else if (this.monacoEditor) {
+                    // Update editor content
+                    this.monacoEditor.setValue(data.content);
+                    this.monacoEditor.setModel(
+                        monaco.editor.createModel(data.content, data.language, monaco.Uri.file(filePath))
+                    );
+                }
+            } catch (error) {
+                console.error('Failed to load file:', error);
+                alert('Failed to load file: ' + error.message);
+            }
+        },
+        
+        initMonacoEditor() {
+            // Wait for DOM element to be available
+            setTimeout(() => {
+                const editorContainer = document.getElementById('monaco-editor');
+                if (!editorContainer) return;
+                
+                require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' } });
+                require(['vs/editor/editor.main'], () => {
+                    this.monacoEditor = monaco.editor.create(editorContainer, {
+                        value: this.currentFileContent,
+                        language: 'python',
+                        theme: this.darkMode ? 'vs-dark' : 'vs',
+                        automaticLayout: true,
+                        fontSize: 14,
+                        minimap: { enabled: true },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        formatOnPaste: true,
+                        formatOnType: true
+                    });
+                    
+                    // Track changes
+                    this.monacoEditor.onDidChangeModelContent(() => {
+                        this.fileModified = this.monacoEditor.getValue() !== this.currentFileContent;
+                    });
+                });
+            }, 100);
+        },
+        
+        async saveCurrentFile() {
+            if (!this.selectedFile || !this.monacoEditor) return;
+            
+            try {
+                const content = this.monacoEditor.getValue();
+                const response = await fetch('/api/code/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: this.selectedFile,
+                        content: content,
+                        language: 'python'
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    this.currentFileContent = content;
+                    this.fileModified = false;
+                    alert('File saved successfully!');
+                } else {
+                    alert('Failed to save file: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Failed to save file:', error);
+                alert('Failed to save file: ' + error.message);
+            }
+        },
+        
+        formatCode() {
+            if (!this.monacoEditor) return;
+            this.monacoEditor.getAction('editor.action.formatDocument').run();
+        },
+
+        // ===========================
+        // INTEGRATIONS METHODS
+        // ===========================
+
+        async refreshIntegrations() {
+            try {
+                const response = await fetch('/api/integrations');
+                const data = await response.json();
+                
+                this.integrations = data.integrations;
+                this.integrationSummary = data.summary;
+                this.activityCount = data.activity_summary?.total_activities || 0;
+                
+            } catch (error) {
+                console.error('Failed to refresh integrations:', error);
+                alert('Failed to refresh integrations: ' + error.message);
+            }
+        },
+
+        async runHealthCheck() {
+            try {
+                const response = await fetch('/api/integrations/health-check', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                alert(`Health Check Complete:\n${data.summary.healthy_platforms}/${data.summary.total_platforms} platforms healthy`);
+                await this.refreshIntegrations();
+                
+            } catch (error) {
+                console.error('Failed to run health check:', error);
+                alert('Failed to run health check: ' + error.message);
+            }
+        },
+
+        async exportActivityLogs() {
+            try {
+                const response = await fetch('/api/integrations/activity/export?hours=24&format_type=json');
+                const data = await response.json();
+                
+                alert(`Activity logs exported to: ${data.export_path}`);
+                
+            } catch (error) {
+                console.error('Failed to export activity logs:', error);
+                alert('Failed to export activity logs: ' + error.message);
+            }
+        },
+
+        async initializeAllIntegrations() {
+            try {
+                const response = await fetch('/api/integrations/initialize', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                alert(`Integrations initialized: ${data.initialized_services.join(', ')}`);
+                await this.refreshIntegrations();
+                
+            } catch (error) {
+                console.error('Failed to initialize integrations:', error);
+                alert('Failed to initialize integrations: ' + error.message);
+            }
+        },
+
+        async togglePlatform(platformKey, platform) {
+            try {
+                const endpoint = platform.enabled 
+                    ? `/api/integrations/${platformKey}/disable`
+                    : `/api/integrations/${platformKey}/enable`;
+                
+                const response = await fetch(endpoint, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.status) {
+                    await this.refreshIntegrations();
+                }
+                
+            } catch (error) {
+                console.error('Failed to toggle platform:', error);
+                alert('Failed to toggle platform: ' + error.message);
+            }
+        },
+
+        configurePlatform(platformKey) {
+            this.selectedPlatform = platformKey;
+            const platform = this.integrations[platformKey];
+            
+            // Reset form
+            this.platformConfig = {
+                api_key: '',
+                enabled: platform?.enabled || false,
+                shop_id: '',
+                base_url: ''
+            };
+            
+            this.showPlatformConfig = true;
+        },
+
+        async savePlatformConfig() {
+            try {
+                const config = {
+                    platform: this.selectedPlatform,
+                    api_key: this.platformConfig.api_key,
+                    enabled: this.platformConfig.enabled,
+                    additional_config: {}
+                };
+                
+                // Add platform-specific config
+                if (this.needsShopId(this.selectedPlatform) && this.platformConfig.shop_id) {
+                    config.additional_config.shop_id = parseInt(this.platformConfig.shop_id);
+                }
+                
+                if (this.needsBaseUrl(this.selectedPlatform) && this.platformConfig.base_url) {
+                    config.additional_config.base_url = this.platformConfig.base_url;
+                }
+                
+                const response = await fetch(`/api/integrations/${this.selectedPlatform}/configure`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'configured') {
+                    alert('Platform configured successfully!');
+                    this.showPlatformConfig = false;
+                    await this.refreshIntegrations();
+                } else {
+                    alert('Failed to configure platform');
+                }
+                
+            } catch (error) {
+                console.error('Failed to save platform config:', error);
+                alert('Failed to save configuration: ' + error.message);
+            }
+        },
+
+        async checkPlatformHealth(platformKey) {
+            try {
+                const response = await fetch(`/api/integrations/${platformKey}/health`);
+                const data = await response.json();
+                
+                const health = data.health;
+                alert(`${platformKey.toUpperCase()} Health:\nStatus: ${health.status}\nMessage: ${health.message}`);
+                
+            } catch (error) {
+                console.error('Failed to check platform health:', error);
+                alert('Failed to check platform health: ' + error.message);
+            }
+        },
+
+        // UI Helper Methods
+        getPlatformIcon(platform) {
+            const icons = {
+                dropbox: 'fab fa-dropbox',
+                airtable: 'fas fa-table',
+                etsy: 'fab fa-etsy',
+                printify: 'fas fa-print',
+                n8n: 'fas fa-sitemap',
+                shopify: 'fab fa-shopify',
+                notion: 'fas fa-sticky-note',
+                canva: 'fas fa-palette',
+                figma: 'fab fa-figma',
+                desktop: 'fas fa-desktop',
+                browser: 'fas fa-globe',
+                email: 'fas fa-envelope'
+            };
+            return icons[platform] || 'fas fa-cube';
+        },
+
+        getPlatformIconBg(platform) {
+            const colors = {
+                dropbox: 'bg-blue-500',
+                airtable: 'bg-orange-500',
+                etsy: 'bg-orange-600',
+                printify: 'bg-green-500',
+                n8n: 'bg-purple-500',
+                shopify: 'bg-green-600',
+                notion: 'bg-gray-800',
+                canva: 'bg-purple-600',
+                figma: 'bg-pink-500',
+                desktop: 'bg-gray-600',
+                browser: 'bg-blue-600',
+                email: 'bg-red-500'
+            };
+            return colors[platform] || 'bg-gray-500';
+        },
+
+        getHealthStatusClass(status) {
+            const classes = {
+                healthy: 'status-online',
+                unhealthy: 'status-error',
+                degraded: 'status-busy',
+                disabled: 'status-offline',
+                not_configured: 'status-offline'
+            };
+            return classes[status] || 'status-offline';
+        },
+
+        needsShopId(platform) {
+            return ['etsy', 'printify'].includes(platform);
+        },
+
+        needsBaseUrl(platform) {
+            return ['n8n'].includes(platform);
+        },
+
+        formatDate(dateString) {
+            if (!dateString) return 'Never';
+            return new Date(dateString).toLocaleDateString();
+        },
+
+        // Theme Management Functions
+        async loadThemes() {
+            try {
+                const response = await fetch('/api/themes');
+                this.availableThemes = await response.json();
+                
+                // Load current theme
+                const currentResponse = await fetch('/api/themes/current');
+                const currentTheme = await currentResponse.json();
+                this.customTheme = { ...currentTheme };
+                
+                // Find which preset matches current theme
+                for (const [key, theme] of Object.entries(this.availableThemes)) {
+                    if (JSON.stringify(theme) === JSON.stringify(currentTheme)) {
+                        this.selectedTheme = key;
+                        break;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load themes:', error);
+            }
+        },
+
+        selectTheme(key, theme) {
+            this.selectedTheme = key;
+            this.customTheme = { ...theme };
+        },
+
+        async uploadLogo(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/themes/upload-logo', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    this.customTheme.logo_url = result.logo_url;
+                } else {
+                    alert('Failed to upload logo: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Logo upload failed:', error);
+                alert('Failed to upload logo');
+            }
+        },
+
+        removeLogo() {
+            this.customTheme.logo_url = null;
+        },
+
+        async applyTheme() {
+            try {
+                const response = await fetch('/api/themes/apply', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.customTheme)
+                });
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    // Reload the theme CSS
+                    const themeCss = document.getElementById('user-theme-css');
+                    if (themeCss) {
+                        themeCss.href = `/static/user_theme.css?v=${Date.now()}`;
+                    }
+                    alert('Theme applied successfully! The page will refresh.');
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    alert('Failed to apply theme: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Failed to apply theme:', error);
+                alert('Failed to apply theme');
+            }
+        },
+
+        previewTheme() {
+            // Apply theme temporarily without saving
+            const root = document.documentElement;
+            root.style.setProperty('--primary-color', this.customTheme.primary_color);
+            root.style.setProperty('--secondary-color', this.customTheme.secondary_color);
+            root.style.setProperty('--accent-color', this.customTheme.accent_color);
+            root.style.setProperty('--background-color', this.customTheme.background_color);
+            root.style.setProperty('--text-color', this.customTheme.text_color);
+            root.style.setProperty('--font-family', this.customTheme.font_family);
+            
+            document.body.style.fontFamily = this.customTheme.font_family;
+            document.body.style.backgroundColor = this.customTheme.background_color;
+            document.body.style.color = this.customTheme.text_color;
+            
+            alert('Preview applied! Use "Apply Theme" to save permanently.');
+        },
+
+        async resetToDefault() {
+            const defaultTheme = this.availableThemes.default;
+            if (defaultTheme) {
+                this.customTheme = { ...defaultTheme };
+                this.selectedTheme = 'default';
+                await this.applyTheme();
+            }
         }
     };
 }

@@ -19,8 +19,8 @@
     </header>
     <main>
       <section class="controls">
-        <div>
-          <p class="text">Boot everything Brebot needs, then enjoy the dashboard:</p>
+        <div class="intro">
+          <p class="text">Boot the Brebot stack, monitor progress, then launch the dashboard when everything is ready.</p>
           <div class="build-info">Build: 2024-09-27 21:14 UTC</div>
           <pre class="status-log" id="status-log">Initializing...</pre>
         </div>
@@ -32,165 +32,376 @@
           <button id="embed-dashboard" class="secondary">Open Dashboard in App</button>
         </div>
       </section>
-      
-      <!-- Embedded Dashboard (hidden by default) -->
-      <section class="dashboard-embed" id="dashboard-embed" style="display: none;">
-        <div class="embed-header">
-          <h3>🤖 Brebot Dashboard</h3>
-          <div class="embed-controls">
-            <button id="refresh-dashboard" class="refresh-btn">🔄 Refresh</button>
-            <button id="close-embed" class="close-btn">×</button>
+      <section class="progress-section" id="progress-section" aria-live="polite">
+        <div class="progress-bar-container">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
           </div>
+          <div class="progress-text" id="progress-text">Waiting for action...</div>
         </div>
-        <div id="iframe-container" style="position: relative; width: 100%; height: calc(100vh - 120px);">
-          <div id="loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 10;">
-            <div style="font-size: 1.2rem; color: #6b7280; margin-bottom: 1rem;">Loading Brebot Dashboard...</div>
-            <div style="width: 40px; height: 40px; border: 4px solid #e5e7eb; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-          </div>
-          <iframe 
-            id="dashboard-frame" 
-            src="http://127.0.0.1:8000" 
-            frameborder="0"
-            allow="fullscreen"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-            style="width: 100%; height: 100%; border: none; border-radius: 8px;"
-            onload="console.log('Iframe loaded successfully'); document.getElementById('loading-indicator').style.display = 'none';"
-            onerror="console.log('Iframe failed to load'); document.getElementById('loading-indicator').innerHTML = '<div style=\'color: #ef4444;\'>Failed to load dashboard. <button onclick=\'location.reload()\'>Retry</button></div>';">
-          </iframe>
-        </div>
+        <div class="progress-steps" id="progress-steps"></div>
       </section>
     </main>
+  </div>
+
+  <div class="dashboard-embed" id="dashboard-embed" role="dialog" aria-modal="true" aria-labelledby="dashboard-embed-title" style="display: none;">
+    <div class="embed-header">
+      <h3 id="dashboard-embed-title">Brebot Dashboard</h3>
+      <div class="embed-controls">
+        <button class="refresh-btn" id="refresh-dashboard">Refresh</button>
+        <button class="close-btn" id="close-embed" aria-label="Close dashboard">&times;</button>
+      </div>
+    </div>
+    <div class="embed-body">
+      <div class="loading-indicator" id="loading-indicator">
+        <div class="loading-title">Loading Brebot dashboard...</div>
+        <div class="loading-spinner"></div>
+      </div>
+      <iframe id="dashboard-frame" title="Brebot dashboard" src="" allow="clipboard-read; clipboard-write"></iframe>
+    </div>
   </div>
   
   <script type="module">
     import { invoke } from 'https://unpkg.com/@tauri-apps/api@1.5.3/tauri.js';
-    
-    console.log('🚀 Simple script starting...');
-    console.log('Available buttons:', document.querySelectorAll('button'));
-    console.log('Embed button:', document.getElementById('embed-dashboard'));
-    
+
     const BREBOT_URL = 'http://127.0.0.1:8000';
-    
+
     const statusPill = document.querySelector('.status-pill');
-    const logArea = document.querySelector('.status-log');
-    
-    function setStatus(state, message) {
-      statusPill.dataset.state = state;
-      statusPill.textContent = message;
-      const timestamp = new Date().toLocaleTimeString();
-      logArea.textContent = `[${timestamp}] ${message}`;
+    const logArea = document.getElementById('status-log');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const progressStepsContainer = document.getElementById('progress-steps');
+    const dashboardOverlay = document.getElementById('dashboard-embed');
+    const dashboardFrame = document.getElementById('dashboard-frame');
+    const loadingIndicator = document.getElementById('loading-indicator');
+
+    const buttons = {
+      startServices: document.getElementById('start-services'),
+      startBackend: document.getElementById('start-backend'),
+      refreshStatus: document.getElementById('refresh-status'),
+      launchPwa: document.getElementById('launch-pwa'),
+      embedDashboard: document.getElementById('embed-dashboard'),
+      refreshDashboard: document.getElementById('refresh-dashboard'),
+      closeEmbed: document.getElementById('close-embed'),
+    };
+
+    const PROGRESS_STEPS = [
+      { id: 'services', label: 'Chroma & Redis', icon: '🧰' },
+      { id: 'backend', label: 'Brebot Backend', icon: '🖥️' },
+      { id: 'health', label: 'Health Check', icon: '🩺' },
+      { id: 'dashboard', label: 'Dashboard Ready', icon: '📊' },
+    ];
+
+    const stepElements = new Map();
+
+    function bootstrapSteps() {
+      if (!progressStepsContainer) return;
+      progressStepsContainer.innerHTML = '';
+      PROGRESS_STEPS.forEach((step) => {
+        const el = document.createElement('div');
+        el.className = 'step';
+        el.dataset.status = 'pending';
+        el.dataset.stepId = step.id;
+        el.innerHTML = `
+          <div class="step-icon">${step.icon}</div>
+          <div class="step-text">${step.label}</div>
+          <div class="step-status" aria-hidden="true">•</div>
+        `;
+        progressStepsContainer.appendChild(el);
+        stepElements.set(step.id, el);
+      });
+      refreshProgressBar();
     }
-    
-    async function checkHealth() {
+
+    bootstrapSteps();
+
+    const logs = [];
+    const MAX_LOG_LINES = 18;
+
+    function normalizeMessage(input) {
+      if (input == null) return '';
+      if (typeof input === 'string') return input;
+      if (input instanceof Error) return input.message;
       try {
-        setStatus('starting', 'Checking Brebot backend...');
-        const response = await invoke('check_backend_health');
-        const data = JSON.parse(response);
-        setStatus('ready', 'Brebot is online! PWA Dashboard ready...');
-        
-        // Hide loading elements when dashboard is ready
-        setTimeout(async () => {
-          const controls = document.querySelector('.controls');
-          const progressSection = document.querySelector('.progress-section');
-          if (controls) controls.style.display = 'none';
-          if (progressSection) progressSection.style.display = 'none';
-          
-          // Navigate directly to dashboard
-          try {
-            await invoke('navigate_to_dashboard');
-            console.log('Auto-navigating to dashboard');
-          } catch (error) {
-            console.error('Auto-navigation failed, falling back to iframe:', error);
-            // Fallback to iframe approach
-            const embed = document.getElementById('dashboard-embed');
-            if (embed) {
-              embed.style.display = 'block';
-              console.log('Auto-showing embedded dashboard');
-            }
-          }
-        }, 2000); // Wait 2 seconds for dashboard to load
+        return JSON.stringify(input);
       } catch (error) {
-        setStatus('error', `Backend not reachable: ${error}`);
+        return String(input);
       }
     }
-    
-    // Button handlers
-    document.getElementById('launch-pwa').addEventListener('click', async () => {
+
+    function appendLog(message) {
+      const entry = `[${new Date().toLocaleTimeString()}] ${normalizeMessage(message)}`;
+      logs.push(entry);
+      if (logs.length > MAX_LOG_LINES) {
+        logs.splice(0, logs.length - MAX_LOG_LINES);
+      }
+      if (logArea) {
+        logArea.textContent = logs.join('\n');
+      }
+    }
+
+    function setStatus(state, message, { log = true } = {}) {
+      if (statusPill) {
+        statusPill.dataset.state = state;
+        statusPill.textContent = message;
+      }
+      if (log) appendLog(message);
+    }
+
+    function setProgressMessage(message) {
+      if (progressText) {
+        progressText.textContent = message;
+      }
+    }
+
+    function setStepState(stepId, status, message) {
+      const el = stepElements.get(stepId);
+      if (!el) return;
+      el.dataset.status = status;
+      if (message) {
+        el.setAttribute('data-message', message);
+        el.title = message;
+      }
+      const statusNode = el.querySelector('.step-status');
+      if (statusNode) {
+        const icons = {
+          pending: '•',
+          active: '🔄',
+          completed: '✅',
+          error: '❌',
+        };
+        statusNode.textContent = icons[status] || '•';
+      }
+      refreshProgressBar();
+    }
+
+    function refreshProgressBar() {
+      if (!progressFill) return;
+      const total = PROGRESS_STEPS.length;
+      let completed = 0;
+      let active = false;
+      PROGRESS_STEPS.forEach((step) => {
+        const el = stepElements.get(step.id);
+        if (!el) return;
+        const state = el.dataset.status;
+        if (state === 'completed') completed += 1;
+        if (state === 'active') active = true;
+      });
+      const activeBonus = active ? 0.35 : 0;
+      const percent = ((completed + activeBonus) / total) * 100;
+      progressFill.style.width = `${Math.min(100, percent)}%`;
+    }
+
+    function extractError(error) {
+      if (error instanceof Error) return error.message;
+      if (typeof error === 'string') return error;
+      try {
+        return JSON.stringify(error);
+      } catch (err) {
+        return String(error);
+      }
+    }
+
+    async function startServices() {
+      const startMessage = 'Starting Chroma & Redis services...';
+      setStatus('starting', startMessage);
+      setProgressMessage(startMessage);
+      setStepState('services', 'active', startMessage);
+      try {
+        await invoke('start_services');
+        const successMessage = 'Services started. Give them a moment to warm up.';
+        setStepState('services', 'completed', successMessage);
+        setStatus('starting', successMessage);
+        setProgressMessage('Services are running. You can now launch the backend.');
+        setTimeout(() => {
+          checkHealth({ background: true }).catch((err) => console.debug('Background health check failed', err));
+        }, 3000);
+      } catch (error) {
+        const message = `Failed to start services: ${extractError(error)}`;
+        console.error(message);
+        setStatus('error', message);
+        setProgressMessage('Services failed to start. Resolve the issue and try again.');
+        setStepState('services', 'error', message);
+        throw error;
+      }
+    }
+
+    async function startBackend() {
+      const startMessage = 'Launching Brebot backend...';
+      setStatus('starting', startMessage);
+      setProgressMessage(startMessage);
+      setStepState('backend', 'active', startMessage);
+      try {
+        await invoke('start_backend');
+        const successMessage = 'Backend process started. Checking health shortly.';
+        setStepState('backend', 'completed', successMessage);
+        setStatus('starting', successMessage);
+        setProgressMessage('Backend starting up. Running health check soon.');
+        setTimeout(() => {
+          checkHealth({ background: true }).catch((err) => console.debug('Background health check failed', err));
+        }, 3000);
+      } catch (error) {
+        const message = `Failed to start backend: ${extractError(error)}`;
+        console.error(message);
+        setStatus('error', message);
+        setProgressMessage('Backend failed to start. Check the logs for details.');
+        setStepState('backend', 'error', message);
+        throw error;
+      }
+    }
+
+    function parseHealthResponse(raw) {
+      if (!raw) return {};
+      if (typeof raw === 'string') {
+        try {
+          return JSON.parse(raw);
+        } catch (error) {
+          console.warn('Failed to parse health response as JSON:', error);
+          return { status: raw };
+        }
+      }
+      return raw;
+    }
+
+    async function checkHealth({ background = false } = {}) {
+      const startMessage = background ? 'Checking backend health (background)...' : 'Checking Brebot backend...';
+      if (!background) {
+        setStatus('starting', startMessage);
+        setProgressMessage(startMessage);
+      } else {
+        appendLog(startMessage);
+      }
+      setStepState('health', 'active', startMessage);
+      try {
+        const response = await invoke('check_backend_health');
+        const data = parseHealthResponse(response);
+        const summary = data?.status || 'online';
+        const successMessage = `Brebot backend is ${summary}.`;
+        setStepState('health', 'completed', successMessage);
+        setProgressMessage('Backend is online. Feel free to open the dashboard.');
+        if (!background) setStatus('ready', successMessage);
+        return data;
+      } catch (error) {
+        const message = `Backend not reachable: ${extractError(error)}`;
+        console.warn(message);
+        setStepState('health', 'error', message);
+        if (!background) {
+          setStatus('warning', message);
+          setProgressMessage('Backend is unreachable. Start it or check your network.');
+        } else {
+          appendLog(message);
+          setProgressMessage('Waiting for backend to start...');
+        }
+        throw error;
+      }
+    }
+
+    function openEmbeddedDashboard() {
+      if (!dashboardOverlay || !dashboardFrame) {
+        appendLog('Embed elements missing. Cannot show dashboard inside the app.');
+        return;
+      }
+      dashboardOverlay.style.display = 'flex';
+      const alreadyLoaded = dashboardFrame.dataset.loaded === 'true';
+      if (alreadyLoaded) {
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        dashboardFrame.style.display = 'block';
+        setStepState('dashboard', 'completed', 'Dashboard opened inside the app.');
+        setStatus('ready', 'Dashboard opened inside the app.');
+        setProgressMessage('Dashboard ready to use.');
+        return;
+      }
+      setStepState('dashboard', 'active', 'Loading dashboard in the app...');
+      setStatus('starting', 'Loading embedded dashboard...');
+      setProgressMessage('Loading dashboard UI...');
+      if (loadingIndicator) {
+        loadingIndicator.style.display = 'flex';
+      }
+      dashboardFrame.style.display = 'none';
+      dashboardFrame.src = BREBOT_URL;
+    }
+
+    function closeEmbeddedDashboard() {
+      if (!dashboardOverlay) return;
+      dashboardOverlay.style.display = 'none';
+      setProgressMessage('Dashboard hidden. Reopen it anytime.');
+      appendLog('Dashboard embed closed.');
+    }
+
+    function refreshEmbeddedDashboard() {
+      if (!dashboardFrame) return;
+      if (loadingIndicator) loadingIndicator.style.display = 'flex';
+      dashboardFrame.style.display = 'none';
+      setStepState('dashboard', 'active', 'Refreshing dashboard view...');
+      setStatus('starting', 'Refreshing embedded dashboard...');
+      setProgressMessage('Refreshing dashboard content...');
+      dashboardFrame.dataset.loaded = 'false';
+      const reloadUrl = `${BREBOT_URL}?reload=${Date.now()}`;
+      dashboardFrame.src = reloadUrl;
+    }
+
+    if (dashboardFrame) {
+      dashboardFrame.addEventListener('load', () => {
+        dashboardFrame.dataset.loaded = 'true';
+        if (loadingIndicator) {
+          loadingIndicator.style.display = 'none';
+        }
+        dashboardFrame.style.display = 'block';
+        setStepState('dashboard', 'completed', 'Dashboard loaded inside the desktop app.');
+        setStatus('ready', 'Dashboard loaded inside the app.');
+        setProgressMessage('Dashboard ready to use.');
+      });
+    }
+
+    function attach(button, handler) {
+      if (!button) return;
+      button.addEventListener('click', () => {
+        if (button.hasAttribute('data-busy')) return;
+        button.disabled = true;
+        button.setAttribute('data-busy', 'true');
+        Promise.resolve()
+          .then(() => handler())
+          .catch((error) => {
+            appendLog(`Action failed: ${extractError(error)}`);
+          })
+          .finally(() => {
+            button.disabled = false;
+            button.removeAttribute('data-busy');
+          });
+      });
+    }
+
+    attach(buttons.startServices, startServices);
+    attach(buttons.startBackend, startBackend);
+    attach(buttons.refreshStatus, () => checkHealth());
+    attach(buttons.launchPwa, async () => {
+      const message = 'Opening dashboard in Chrome...';
+      setStatus('starting', message);
+      setProgressMessage('Requesting Chrome to open the dashboard...');
       try {
         await invoke('open_pwa_in_chrome');
+        setStatus('ready', 'Dashboard opened in Chrome (or default browser as fallback).');
+        setProgressMessage('Dashboard opened externally.');
       } catch (error) {
-        console.error('Failed to open PWA in Chrome:', error);
-        // Fallback to default browser
+        const errMessage = `Failed to open Chrome: ${extractError(error)}. Opening in default browser.`;
+        console.warn(errMessage);
+        setStatus('warning', errMessage);
         window.open(BREBOT_URL, '_blank');
       }
     });
-    
-    document.getElementById('embed-dashboard').addEventListener('click', async () => {
-      console.log('Navigate to dashboard clicked');
-      try {
-        await invoke('navigate_to_dashboard');
-        console.log('Navigation command sent');
-      } catch (error) {
-        console.error('Failed to navigate to dashboard:', error);
-        // Fallback to iframe approach
-        const controls = document.querySelector('.controls');
-        const embed = document.getElementById('dashboard-embed');
-        
-        if (controls) controls.style.display = 'none';
-        if (embed) embed.style.display = 'block';
-      }
+    attach(buttons.embedDashboard, () => {
+      openEmbeddedDashboard();
     });
-    
-    document.getElementById('close-embed').addEventListener('click', () => {
-      const controls = document.querySelector('.controls');
-      const embed = document.getElementById('dashboard-embed');
-      
-      if (controls) controls.style.display = 'block';
-      if (embed) embed.style.display = 'none';
+    attach(buttons.refreshDashboard, refreshEmbeddedDashboard);
+    attach(buttons.closeEmbed, closeEmbeddedDashboard);
+
+    setStatus('starting', 'Brebot Desktop ready. Start services or open the dashboard when ready.', { log: false });
+    appendLog('Brebot Desktop ready. Start services or open the dashboard when ready.');
+    setProgressMessage('Waiting for action...');
+
+    checkHealth({ background: true }).catch(() => {
+      appendLog('Initial health check failed. Start the backend when you are ready.');
     });
-    
-    document.getElementById('refresh-dashboard').addEventListener('click', () => {
-      const iframe = document.getElementById('dashboard-frame');
-      const loadingIndicator = document.getElementById('loading-indicator');
-      
-      if (loadingIndicator) {
-        loadingIndicator.style.display = 'block';
-        loadingIndicator.innerHTML = '<div style="font-size: 1.2rem; color: #6b7280; margin-bottom: 1rem;">Refreshing Dashboard...</div><div style="width: 40px; height: 40px; border: 4px solid #e5e7eb; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>';
-      }
-      
-      if (iframe) {
-        iframe.src = iframe.src; // Refresh the iframe
-      }
-    });
-    
-    document.getElementById('refresh-status').addEventListener('click', () => {
-      checkHealth();
-    });
-    
-    document.getElementById('start-backend').addEventListener('click', async () => {
-      setStatus('starting', 'Launching backend...');
-      try {
-        await invoke('start_backend');
-        setStatus('starting', 'Backend launched, checking...');
-        setTimeout(() => checkHealth(), 2000);
-      } catch (error) {
-        setStatus('error', `Failed to start backend: ${error}`);
-      }
-    });
-    
-    document.getElementById('start-services').addEventListener('click', async () => {
-      setStatus('starting', 'Starting services...');
-      try {
-        await invoke('start_services');
-        setStatus('starting', 'Services started, checking...');
-        setTimeout(() => checkHealth(), 3000);
-      } catch (error) {
-        setStatus('error', `Failed to start services: ${error}`);
-      }
-    });
-    
-    // Auto-check on load
-    setTimeout(checkHealth, 1000);
   </script>
 </body>
 </html>

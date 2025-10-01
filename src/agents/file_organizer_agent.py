@@ -6,7 +6,9 @@ An AI agent specialized in organizing files and directories.
 from typing import List, Optional
 from crewai import Agent, Task, Crew, Process
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from config import get_llm_config, get_embedding_config, settings
 from tools import ListFilesTool, CreateFolderTool, MoveFileTool, OrganizeFilesTool
@@ -56,16 +58,33 @@ class FileOrganizerAgent:
                 temperature=0.1,
                 request_timeout=120.0
             )
+        elif self.llm_config["provider"] == "openai":
+            return OpenAI(
+                model=self.llm_config["model"],
+                api_key=self.llm_config["api_key"],
+                temperature=0.1,
+                request_timeout=120.0
+            )
         else:
-            # For OpenAI or other providers, you would set up accordingly
             raise ValueError(f"LLM provider '{self.llm_config['provider']}' not yet implemented")
     
     def _setup_embedding(self):
         """Set up the embedding model."""
-        return OllamaEmbedding(
-            model_name=self.embedding_config["model"],
-            base_url=self.embedding_config["base_url"]
-        )
+        if self.embedding_config["provider"] == "ollama":
+            return OllamaEmbedding(
+                model_name=self.embedding_config["model"],
+                base_url=self.embedding_config["base_url"]
+            )
+        elif self.embedding_config["provider"] == "openai":
+            return OpenAIEmbedding(
+                model=self.embedding_config["model_name"],
+                api_key=self.embedding_config["api_key"]
+            )
+        else:
+            return OllamaEmbedding(
+                model_name=self.embedding_config["model"],
+                base_url=self.embedding_config["base_url"]
+            )
     
     def _setup_tools(self) -> List:
         """Set up tools for the agent."""

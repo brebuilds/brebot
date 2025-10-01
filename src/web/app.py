@@ -24,6 +24,9 @@ from chromadb.config import Settings
 # Shared utilities
 from utils import brebot_logger
 
+# Integration management
+from services.integration_manager import get_integration_manager, initialize_all_integrations
+
 # Import voice service (optional)
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -722,6 +725,166 @@ async def file_operation(operation: FileOperation, background_tasks: BackgroundT
     
     return {"task_id": task_id, "status": "processing"}
 
+# New Code Editor APIs
+class CodeFile(BaseModel):
+    path: str
+    content: str
+    language: str = "python"
+
+@app.get("/api/code/browse")
+async def browse_code_files():
+    """Browse code files in the project"""
+    project_root = Path(__file__).parent.parent
+    code_files = []
+    
+    # Get Python files
+    for py_file in project_root.rglob("*.py"):
+        if "__pycache__" not in str(py_file) and "venv" not in str(py_file):
+            rel_path = py_file.relative_to(project_root)
+            code_files.append({
+                "path": str(rel_path),
+                "name": py_file.name,
+                "type": "python",
+                "size": py_file.stat().st_size,
+                "modified": datetime.fromtimestamp(py_file.stat().st_mtime).isoformat()
+            })
+    
+    return {"files": code_files[:50]}  # Limit to 50 files for performance
+
+@app.get("/api/code/read/{file_path:path}")
+async def read_code_file(file_path: str):
+    """Read a code file for editing"""
+    project_root = Path(__file__).parent.parent
+    full_path = project_root / file_path
+    
+    if not full_path.exists() or not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Security check - only allow files within project
+    if not str(full_path.resolve()).startswith(str(project_root.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        content = full_path.read_text(encoding='utf-8')
+        language = "python" if file_path.endswith('.py') else "text"
+        
+        return {
+            "path": file_path,
+            "content": content,
+            "language": language,
+            "size": len(content),
+            "lines": len(content.split('\n'))
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+@app.post("/api/code/save")
+async def save_code_file(code_file: CodeFile):
+    """Save a code file with live editing"""
+    project_root = Path(__file__).parent.parent
+    full_path = project_root / code_file.path
+    
+    # Security check - only allow files within project
+    if not str(full_path.resolve()).startswith(str(project_root.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        # Create backup
+        if full_path.exists():
+            backup_path = full_path.with_suffix(f"{full_path.suffix}.backup")
+            backup_path.write_text(full_path.read_text(encoding='utf-8'), encoding='utf-8')
+        
+        # Save new content
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(code_file.content, encoding='utf-8')
+        
+        brebot_logger.log_agent_action(
+            agent_name="CodeEditor",
+            action="file_saved",
+            details={"file": code_file.path, "size": len(code_file.content)}
+        )
+        
+        return {
+            "success": True,
+            "message": f"File {code_file.path} saved successfully",
+            "backup_created": full_path.exists()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+
+@app.post("/api/agents/create")
+async def create_new_agent(agent_spec: BotDesignSpec):
+    """Create a new agent dynamically"""
+    try:
+        # Use the bot architect service to create the agent
+        result = await botArchitectService.design_bot(agent_spec)
+        
+        if result.get("success"):
+            # Deploy the agent
+            deployment_result = await botArchitectService.deploy_bot(result["bot_config"])
+            
+            brebot_logger.log_agent_action(
+                agent_name="BotArchitect",
+                action="agent_created",
+                details={"agent_name": agent_spec.name, "department": agent_spec.department}
+            )
+            
+            return {
+                "success": True,
+                "agent_id": deployment_result.get("agent_id"),
+                "message": f"Agent {agent_spec.name} created successfully",
+                "config": result["bot_config"]
+            }
+        else:
+            return {"success": False, "error": result.get("error", "Unknown error")}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating agent: {str(e)}")
+
+@app.get("/api/agents/templates")
+async def get_agent_templates():
+    """Get available agent templates"""
+    return {
+        "templates": [
+            {
+                "id": "file_organizer",
+                "name": "File Organizer",
+                "description": "Organizes files and directories",
+                "category": "productivity",
+                "tools": ["file_operations", "folder_creation"],
+                "example_config": {
+                    "role": "File Organization Specialist",
+                    "goal": "Organize files efficiently",
+                    "backstory": "Expert in file management"
+                }
+            },
+            {
+                "id": "data_analyst", 
+                "name": "Data Analyst",
+                "description": "Analyzes data and creates reports",
+                "category": "analytics",
+                "tools": ["data_processing", "visualization"],
+                "example_config": {
+                    "role": "Data Analysis Expert",
+                    "goal": "Extract insights from data",
+                    "backstory": "Experienced data scientist"
+                }
+            },
+            {
+                "id": "social_media_manager",
+                "name": "Social Media Manager", 
+                "description": "Manages social media content and engagement",
+                "category": "marketing",
+                "tools": ["content_creation", "social_posting"],
+                "example_config": {
+                    "role": "Social Media Specialist",
+                    "goal": "Increase social media engagement",
+                    "backstory": "Marketing expert with social media focus"
+                }
+            }
+        ]
+    }
+
 @app.post("/api/pipeline/start")
 async def start_pipeline(pipeline: PipelineRequest, background_tasks: BackgroundTasks):
     """Start a new pipeline"""
@@ -1209,6 +1372,188 @@ async def check_service(url: str) -> str:
     except:
         return "unreachable"
 
+# ===============================
+# INTEGRATIONS API ENDPOINTS
+# ===============================
+
+class IntegrationConfigRequest(BaseModel):
+    platform: str
+    api_key: Optional[str] = None
+    additional_config: Optional[Dict[str, Any]] = None
+    enabled: bool = True
+
+@app.get("/api/integrations")
+async def get_integrations():
+    """Get all platform integrations with their status."""
+    try:
+        manager = get_integration_manager()
+        summary = await manager.get_integration_summary()
+        
+        return {
+            "integrations": summary["platforms"],
+            "health_details": summary["health_details"],
+            "summary": {
+                "total": summary["total_integrations"],
+                "enabled": summary["enabled_integrations"],
+                "healthy": summary["healthy_integrations"]
+            },
+            "activity_summary": summary.get("activity_summary", {}),
+            "generated_at": summary["generated_at"]
+        }
+    except Exception as e:
+        brebot_logger.log_error(e, context="web.get_integrations")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/integrations/{platform}/configure")
+async def configure_integration(platform: str, config: IntegrationConfigRequest):
+    """Configure a platform integration."""
+    try:
+        manager = get_integration_manager()
+        
+        # Update platform configuration
+        manager.update_platform_config(
+            platform=platform,
+            enabled=config.enabled,
+            api_key=config.api_key,
+            additional_config=config.additional_config
+        )
+        
+        # Re-initialize services
+        await manager.initialize_services()
+        
+        # Get updated status
+        platform_config = manager.get_platform_config(platform)
+        
+        return {
+            "platform": platform,
+            "status": "configured",
+            "enabled": platform_config.enabled if platform_config else False,
+            "health_status": platform_config.health_status if platform_config else "unknown"
+        }
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context=f"web.configure_integration.{platform}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/integrations/{platform}/enable")
+async def enable_integration(platform: str):
+    """Enable a platform integration."""
+    try:
+        manager = get_integration_manager()
+        manager.update_platform_config(platform=platform, enabled=True)
+        await manager.initialize_services()
+        
+        return {"platform": platform, "status": "enabled"}
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context=f"web.enable_integration.{platform}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/integrations/{platform}/disable")
+async def disable_integration(platform: str):
+    """Disable a platform integration."""
+    try:
+        manager = get_integration_manager()
+        manager.update_platform_config(platform=platform, enabled=False)
+        
+        return {"platform": platform, "status": "disabled"}
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context=f"web.disable_integration.{platform}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/integrations/{platform}/health")
+async def check_integration_health(platform: str):
+    """Check health of a specific platform integration."""
+    try:
+        manager = get_integration_manager()
+        health_results = await manager.health_check_all()
+        
+        if platform not in health_results:
+            raise HTTPException(status_code=404, detail=f"Platform {platform} not found")
+        
+        return {
+            "platform": platform,
+            "health": health_results[platform]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        brebot_logger.log_error(e, context=f"web.check_integration_health.{platform}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/integrations/health-check")
+async def run_health_check_all():
+    """Run health check on all integrations."""
+    try:
+        manager = get_integration_manager()
+        health_results = await manager.health_check_all()
+        
+        healthy_count = sum(1 for result in health_results.values() if result["status"] == "healthy")
+        
+        return {
+            "health_results": health_results,
+            "summary": {
+                "total_platforms": len(health_results),
+                "healthy_platforms": healthy_count,
+                "unhealthy_platforms": len(health_results) - healthy_count
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context="web.run_health_check_all")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/integrations/activity/export")
+async def export_integration_activity(
+    platform: Optional[str] = None,
+    hours: int = 24,
+    format_type: str = "json"
+):
+    """Export integration activity logs."""
+    try:
+        manager = get_integration_manager()
+        export_path = await manager.export_activity_logs(
+            platform=platform,
+            hours=hours,
+            format_type=format_type
+        )
+        
+        return {
+            "export_path": export_path,
+            "platform": platform,
+            "hours": hours,
+            "format": format_type,
+            "generated_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context="web.export_integration_activity")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/integrations/initialize")
+async def initialize_integrations():
+    """Initialize all platform integrations."""
+    try:
+        manager = await initialize_all_integrations()
+        initialized_services = await manager.initialize_services()
+        
+        return {
+            "status": "initialized",
+            "initialized_services": initialized_services,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        brebot_logger.log_error(e, context="web.initialize_integrations")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ===============================
+# HEALTH CHECK FUNCTIONS
+# ===============================
+
 async def check_redis_health() -> str:
     """Check Redis health"""
     try:
@@ -1226,6 +1571,258 @@ async def check_docker_health() -> str:
         return "healthy" if result.returncode == 0 else "unhealthy"
     except:
         return "unreachable"
+
+
+# Theme Management APIs
+class ThemeConfig(BaseModel):
+    name: str
+    primary_color: str
+    secondary_color: str
+    accent_color: str
+    background_color: str
+    text_color: str
+    font_family: str
+    logo_url: Optional[str] = None
+    custom_css: Optional[str] = None
+
+@app.get("/api/themes")
+async def get_available_themes():
+    """Get available theme presets"""
+    themes = {
+        "default": {
+            "name": "Default",
+            "primary_color": "#3b82f6",
+            "secondary_color": "#64748b",
+            "accent_color": "#10b981",
+            "background_color": "#ffffff",
+            "text_color": "#1f2937",
+            "font_family": "Inter, system-ui, sans-serif"
+        },
+        "glassmorphism": {
+            "name": "Glass Morphism",
+            "primary_color": "#8b5cf6",
+            "secondary_color": "#a78bfa",
+            "accent_color": "#06b6d4",
+            "background_color": "rgba(255, 255, 255, 0.1)",
+            "text_color": "#1f2937",
+            "font_family": "SF Pro Display, -apple-system, sans-serif"
+        },
+        "neon_brutalism": {
+            "name": "Neon Brutalism",
+            "primary_color": "#ff0080",
+            "secondary_color": "#00ff80",
+            "accent_color": "#ffff00",
+            "background_color": "#000000",
+            "text_color": "#ffffff",
+            "font_family": "JetBrains Mono, Courier New, monospace"
+        },
+        "luxury_clean": {
+            "name": "Luxury Clean White",
+            "primary_color": "#d4af37",
+            "secondary_color": "#c9b037",
+            "accent_color": "#f5f5dc",
+            "background_color": "#fafafa",
+            "text_color": "#2c2c2c",
+            "font_family": "Playfair Display, Georgia, serif"
+        },
+        "dark_techy": {
+            "name": "Dark Techy Glow",
+            "primary_color": "#00ff41",
+            "secondary_color": "#00d4aa",
+            "accent_color": "#0099cc",
+            "background_color": "#0a0a0a",
+            "text_color": "#00ff41",
+            "font_family": "Fira Code, Monaco, monospace"
+        },
+        "coastal_surf": {
+            "name": "Coastal Surf Zine",
+            "primary_color": "#00a8cc",
+            "secondary_color": "#ffa500",
+            "accent_color": "#ff6b6b",
+            "background_color": "#f0f8ff",
+            "text_color": "#2c3e50",
+            "font_family": "Surfer, Comic Sans MS, cursive"
+        }
+    }
+    return themes
+
+@app.get("/api/themes/current")
+async def get_current_theme():
+    """Get current theme configuration"""
+    theme_file = Path("src/web/static/user_theme.json")
+    if theme_file.exists():
+        try:
+            return json.loads(theme_file.read_text())
+        except:
+            pass
+    # Return default theme
+    themes = await get_available_themes()
+    return themes["default"]
+
+@app.post("/api/themes/apply")
+async def apply_theme(theme_config: ThemeConfig):
+    """Apply a theme configuration"""
+    try:
+        theme_file = Path("src/web/static/user_theme.json")
+        theme_file.parent.mkdir(parents=True, exist_ok=True)
+        theme_file.write_text(json.dumps(theme_config.dict(), indent=2))
+        
+        # Generate CSS file
+        css_content = generate_theme_css(theme_config)
+        css_file = Path("src/web/static/user_theme.css")
+        css_file.write_text(css_content)
+        
+        return {"status": "success", "message": "Theme applied successfully"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/themes/upload-logo")
+async def upload_logo(file: UploadFile = File(...)):
+    """Upload custom logo"""
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    try:
+        # Save uploaded logo
+        logo_dir = Path("src/web/static/uploads")
+        logo_dir.mkdir(parents=True, exist_ok=True)
+        
+        logo_path = logo_dir / f"logo_{uuid.uuid4().hex[:8]}.{file.filename.split('.')[-1]}"
+        with open(logo_path, "wb") as buffer:
+            buffer.write(await file.read())
+        
+        logo_url = f"/static/uploads/{logo_path.name}"
+        return {"status": "success", "logo_url": logo_url}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def generate_theme_css(theme: ThemeConfig) -> str:
+    """Generate CSS from theme configuration"""
+    css = f"""
+/* User Theme CSS - Generated automatically */
+:root {{
+    --primary-color: {theme.primary_color};
+    --secondary-color: {theme.secondary_color};
+    --accent-color: {theme.accent_color};
+    --background-color: {theme.background_color};
+    --text-color: {theme.text_color};
+    --font-family: {theme.font_family};
+}}
+
+body {{
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+}}
+
+/* Apply theme colors to common elements */
+.btn-primary, .bg-blue-500 {{
+    background-color: var(--primary-color) !important;
+}}
+
+.text-blue-500, .text-blue-600 {{
+    color: var(--primary-color) !important;
+}}
+
+.border-blue-500 {{
+    border-color: var(--primary-color) !important;
+}}
+
+.bg-gray-500 {{
+    background-color: var(--secondary-color) !important;
+}}
+
+.text-green-500, .text-green-600 {{
+    color: var(--accent-color) !important;
+}}
+
+.bg-green-500 {{
+    background-color: var(--accent-color) !important;
+}}
+"""
+    
+    # Add glassmorphism effects
+    if "glassmorphism" in theme.name.lower():
+        css += """
+/* Glassmorphism Effects */
+.modal-content, .card, .sidebar {{
+    backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}}
+"""
+    
+    # Add neon effects for brutalism
+    if "neon" in theme.name.lower():
+        css += """
+/* Neon Brutalism Effects */
+.btn, .card, .modal-content {{
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 20px var(--primary-color);
+    text-shadow: 0 0 10px var(--primary-color);
+}}
+
+.btn:hover {{
+    box-shadow: 0 0 30px var(--primary-color), inset 0 0 20px var(--primary-color);
+}}
+"""
+    
+    # Add luxury styling
+    if "luxury" in theme.name.lower():
+        css += """
+/* Luxury Clean Styling */
+.card, .modal-content {{
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    border: 1px solid #e5e5e5;
+}}
+
+.btn {{
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}}
+"""
+    
+    # Add techy glow effects
+    if "techy" in theme.name.lower():
+        css += """
+/* Dark Techy Glow Effects */
+.card, .modal-content, .btn {{
+    background: rgba(0, 255, 65, 0.05);
+    border: 1px solid var(--primary-color);
+    box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+}}
+
+.text-primary {{
+    text-shadow: 0 0 10px var(--primary-color);
+}}
+"""
+    
+    # Add surf zine styling
+    if "surf" in theme.name.lower():
+        css += """
+/* Coastal Surf Zine Styling */
+.card, .btn {{
+    border-radius: 15px;
+    transform: rotate(-1deg);
+    box-shadow: 3px 3px 0px var(--accent-color);
+}}
+
+.card:nth-child(even) {{
+    transform: rotate(1deg);
+}}
+
+.btn {{
+    font-weight: bold;
+    text-transform: lowercase;
+}}
+"""
+    
+    if theme.custom_css:
+        css += f"\n/* Custom CSS */\n{theme.custom_css}"
+    
+    return css
 
 if __name__ == "__main__":
     import uvicorn

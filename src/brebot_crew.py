@@ -10,7 +10,9 @@ from datetime import datetime
 
 from crewai import Crew, Process
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from config import get_llm_config, get_embedding_config, settings
 from agents import FileOrganizerAgent, MarketingAgent, WebDesignAgent
@@ -60,15 +62,33 @@ class BrebotCrew:
                 temperature=0.1,
                 request_timeout=120.0
             )
+        elif self.llm_config["provider"] == "openai":
+            return OpenAI(
+                model=self.llm_config["model"],
+                api_key=self.llm_config["api_key"],
+                temperature=0.1,
+                request_timeout=120.0
+            )
         else:
             raise ValueError(f"LLM provider '{self.llm_config['provider']}' not yet implemented")
     
     def _setup_embedding(self):
         """Set up the embedding model."""
-        return OllamaEmbedding(
-            model_name=self.embedding_config["model"],
-            base_url=self.embedding_config["base_url"]
-        )
+        if self.embedding_config["provider"] == "ollama":
+            return OllamaEmbedding(
+                model_name=self.embedding_config["model"],
+                base_url=self.embedding_config["base_url"]
+            )
+        elif self.embedding_config["provider"] == "openai":
+            return OpenAIEmbedding(
+                model=self.embedding_config["model_name"],
+                api_key=self.embedding_config["api_key"]
+            )
+        else:
+            return OllamaEmbedding(
+                model_name=self.embedding_config["model"],
+                base_url=self.embedding_config["base_url"]
+            )
     
     def _setup_agents(self) -> Dict[str, Any]:
         """Set up all agents for the crew."""
@@ -96,13 +116,16 @@ class BrebotCrew:
     
     def _create_crew(self) -> Crew:
         """Create the main crew with all agents."""
+        # Extract the actual Agent objects from our wrapper classes
+        agent_objects = [agent.agent for agent in self.agents.values()]
+        
         return Crew(
-            agents=list(self.agents.values()),
+            agents=agent_objects,
             process=Process.sequential,
             verbose=settings.agent_verbose,
             memory=settings.agent_memory,
             planning=True,  # Enable planning for complex tasks
-            embedder=self.embedding
+            embedder=self.embedding_config  # Use config dict instead of object
         )
     
     def organize_files(self, directory_path: str, organization_type: str = "by_extension") -> str:

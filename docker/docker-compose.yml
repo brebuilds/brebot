@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Core AI Services
   ollama:
@@ -38,7 +36,7 @@ services:
       retries: 3
 
   chromadb:
-    image: chromadb/chroma:latest
+    image: ghcr.io/chroma-core/chroma:0.5.23
     container_name: brebot-chromadb
     ports:
       - "8001:8000"  # Changed to 8001 to avoid conflict with Brebot web interface
@@ -81,11 +79,15 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - CHROMA_URL=http://chromadb:8000
       - REDIS_URL=redis://redis:6379
-      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
-      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
-      - DROPBOX_TOKEN=${DROPBOX_TOKEN}
-      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN}
-      - LOG_LEVEL=INFO
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY:-}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID:-}
+      - AIRTABLE_TASKS_TABLE=${AIRTABLE_TASKS_TABLE:-Tasks}
+      - AIRTABLE_SYSTEM_EVENTS_TABLE=${AIRTABLE_SYSTEM_EVENTS_TABLE:-SystemEvents}
+      - AIRTABLE_INGESTION_RUNS_TABLE=${AIRTABLE_INGESTION_RUNS_TABLE:-IngestionRuns}
+      - DROPBOX_TOKEN=${DROPBOX_TOKEN:-}
+      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN:-}
+      - SHOPIFY_SHOP_DOMAIN=${SHOPIFY_SHOP_DOMAIN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ../src:/app/src
       - ../data:/app/data
@@ -111,11 +113,12 @@ services:
       context: ../bots/mocktopus
       dockerfile: Dockerfile
     container_name: brebot-mocktopus
+    profiles: ["bots"]
     environment:
       - REDIS_URL=redis://redis:6379
-      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
-      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
-      - PHOTOPEA_API_URL=${PHOTOPEA_API_URL}
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY:-}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID:-}
+      - PHOTOPEA_API_URL=${PHOTOPEA_API_URL:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -131,10 +134,11 @@ services:
       context: ../bots/airtable-logger
       dockerfile: Dockerfile
     container_name: brebot-airtable-logger
+    profiles: ["bots"]
     environment:
       - REDIS_URL=redis://redis:6379
-      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
-      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY:-}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -145,12 +149,13 @@ services:
       context: ../bots/shopify-publisher
       dockerfile: Dockerfile
     container_name: brebot-shopify-publisher
+    profiles: ["bots"]
     environment:
       - REDIS_URL=redis://redis:6379
-      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
-      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
-      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN}
-      - SHOPIFY_SHOP_DOMAIN=${SHOPIFY_SHOP_DOMAIN}
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY:-}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID:-}
+      - SHOPIFY_TOKEN=${SHOPIFY_TOKEN:-}
+      - SHOPIFY_SHOP_DOMAIN=${SHOPIFY_SHOP_DOMAIN:-}
     depends_on:
       redis:
         condition: service_healthy

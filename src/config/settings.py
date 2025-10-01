@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 from pydantic import Field, validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
 
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     
     # LLM Configuration
     ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
-    ollama_model: str = Field(default="llama3.1:8b", env="OLLAMA_MODEL")
+    ollama_model: str = Field(default="brebot-v2", env="OLLAMA_MODEL")
     ollama_embedding_model: str = Field(default="nomic-embed-text", env="OLLAMA_EMBEDDING_MODEL")
     
     # OpenAI Configuration (alternative)
@@ -53,7 +53,16 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=1024, env="CHUNK_SIZE")
     chunk_overlap: int = Field(default=200, env="CHUNK_OVERLAP")
     top_k_results: int = Field(default=5, env="TOP_K_RESULTS")
-    
+
+    # Storage & Integrations
+    chroma_url: str = Field(default="http://localhost:8001", env="CHROMA_URL")
+    redis_url: Optional[str] = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+    airtable_api_key: Optional[str] = Field(default=None, env="AIRTABLE_API_KEY")
+    airtable_base_id: Optional[str] = Field(default=None, env="AIRTABLE_BASE_ID")
+    airtable_tasks_table: str = Field(default="Tasks", env="AIRTABLE_TASKS_TABLE")
+    airtable_system_events_table: str = Field(default="SystemEvents", env="AIRTABLE_SYSTEM_EVENTS_TABLE")
+    airtable_ingestion_runs_table: str = Field(default="IngestionRuns", env="AIRTABLE_INGESTION_RUNS_TABLE")
+
     # Security
     secret_key: Optional[str] = Field(default=None, env="SECRET_KEY")
     encryption_key: Optional[str] = Field(default=None, env="ENCRYPTION_KEY")
@@ -77,10 +86,12 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of {valid_levels}")
         return v.upper()
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="allow",
+    )
 
 
 def load_settings() -> Settings:
@@ -151,11 +162,18 @@ def get_embedding_config(settings: Settings) -> dict:
     Returns:
         dict: Embedding configuration
     """
-    return {
-        "provider": "ollama",
-        "model": settings.ollama_embedding_model,
-        "base_url": settings.ollama_base_url
-    }
+    if settings.openai_api_key:
+        return {
+            "provider": "openai",
+            "api_key": settings.openai_api_key,
+            "model_name": "text-embedding-ada-002"  # Use model_name for CrewAI
+        }
+    else:
+        return {
+            "provider": "ollama",
+            "model": settings.ollama_embedding_model,
+            "base_url": settings.ollama_base_url
+        }
 
 
 # Global settings instance

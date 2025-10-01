@@ -35,7 +35,13 @@ async def route_action(action: Action):
     elif action.type == "memory.delete":
         return await memoryService.delete(action.id)
     elif action.type == "memory.search":
-        return await memoryService.search(action.query)
+        return await memoryService.search(
+            query=action.query,
+            tags=action.tags,
+            domain=action.domain,
+            project=action.project,
+            source_type=action.source_type,
+        )
 
     # ----------------- Inbox -----------------
     elif action.type == "inbox.notify":

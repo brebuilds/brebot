@@ -72,10 +72,12 @@ class BrebotCLI:
             dict: Health check results
         """
         if not self.crew:
-            return {
-                "status": "error",
-                "message": "Crew not initialized"
-            }
+            # Auto-initialize for health check
+            if not self.initialize_crew():
+                return {
+                    "status": "error",
+                    "message": "Failed to initialize crew for health check"
+                }
         
         return self.crew.health_check()
     

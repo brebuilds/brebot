@@ -151,7 +151,10 @@ class BrebotLogger:
             "context": context
         }
         
-        logger.error(f"❌ Error: {type(error).__name__}: {str(error)}", extra=log_data)
+        logger.opt(exception=True).error(
+            f"❌ Error: {type(error).__name__}: {str(error)}",
+            extra=log_data,
+        )
     
     def log_performance(self, operation: str, duration: float, details: dict = None):
         """

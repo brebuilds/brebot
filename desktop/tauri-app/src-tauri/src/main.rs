@@ -58,7 +58,40 @@ async fn navigate_to_dashboard(app: AppHandle) -> Result<(), String> {
     
     // Get the main window
     if let Some(window) = app.get_window("main") {
-        window.eval(&format!("window.location.href = '{}';", url))
+        // Force navigation with multiple methods
+        let navigation_script = format!(
+            r#"
+            console.log('Attempting to navigate to: {}');
+            
+            // Method 1: Direct location assignment
+            try {{
+                window.location.href = '{}';
+                console.log('Method 1: Direct href assignment successful');
+            }} catch (e) {{
+                console.error('Method 1 failed:', e);
+                
+                // Method 2: Location replace
+                try {{
+                    window.location.replace('{}');
+                    console.log('Method 2: Location replace successful');
+                }} catch (e2) {{
+                    console.error('Method 2 failed:', e2);
+                    
+                    // Method 3: Create new window
+                    try {{
+                        window.open('{}', '_self');
+                        console.log('Method 3: Window open successful');
+                    }} catch (e3) {{
+                        console.error('All navigation methods failed:', e3);
+                        throw e3;
+                    }}
+                }}
+            }}
+            "#,
+            url, url, url, url
+        );
+        
+        window.eval(&navigation_script)
             .map_err(|e| format!("Failed to navigate: {e}"))?;
     } else {
         return Err("Main window not found".to_string());

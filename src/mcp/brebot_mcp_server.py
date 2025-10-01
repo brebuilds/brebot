@@ -33,6 +33,7 @@ from brebot_crew import BrebotCrew
 from config.settings import settings
 from utils.logger import brebot_logger
 from services.bot_architect_service import botArchitectService, BotDesignSpec
+from services.n8n_service import N8nService, initialize_n8n_service, get_n8n_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -327,6 +328,165 @@ async def list_tools() -> List[Tool]:
                     }
                 }
             }
+        ),
+        Tool(
+            name="list_n8n_workflows",
+            description="List all n8n workflows from your n8n instance",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "active_only": {
+                        "type": "boolean",
+                        "description": "If true, only list active workflows"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="execute_n8n_workflow",
+            description="Execute a specific n8n workflow",
+            inputSchema={
+                "type": "object", 
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the workflow to execute"
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "Optional data to pass to the workflow"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
+        ),
+        Tool(
+            name="get_n8n_execution_status",
+            description="Get the status of an n8n workflow execution",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "execution_id": {
+                        "type": "string",
+                        "description": "ID of the execution to check"
+                    }
+                },
+                "required": ["execution_id"]
+            }
+        ),
+        Tool(
+            name="activate_n8n_workflow", 
+            description="Activate an n8n workflow to make it available for execution",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the workflow to activate"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
+        ),
+        Tool(
+            name="deactivate_n8n_workflow",
+            description="Deactivate an n8n workflow to stop it from running",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string", 
+                        "description": "ID of the workflow to deactivate"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
+        ),
+        Tool(
+            name="get_n8n_health",
+            description="Check the health status of the n8n instance",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="create_n8n_workflow",
+            description="Create a new n8n workflow",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the new workflow"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description of what the workflow does"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags to categorize the workflow"
+                    }
+                },
+                "required": ["name"]
+            }
+        ),
+        Tool(
+            name="update_n8n_workflow",
+            description="Update an existing n8n workflow name, tags, or structure",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the workflow to update"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "New name for the workflow"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "New tags for the workflow"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
+        ),
+        Tool(
+            name="duplicate_n8n_workflow",
+            description="Create a copy of an existing n8n workflow",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the workflow to duplicate"
+                    },
+                    "new_name": {
+                        "type": "string",
+                        "description": "Name for the new workflow copy"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
+        ),
+        Tool(
+            name="delete_n8n_workflow",
+            description="Delete an n8n workflow permanently",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {
+                        "type": "string",
+                        "description": "ID of the workflow to delete"
+                    }
+                },
+                "required": ["workflow_id"]
+            }
         )
     ]
 
@@ -363,6 +523,26 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             return await handle_update_bot_configuration(arguments)
         elif name == "get_task_history":
             return await handle_get_task_history(arguments)
+        elif name == "list_n8n_workflows":
+            return await handle_list_n8n_workflows(arguments)
+        elif name == "execute_n8n_workflow":
+            return await handle_execute_n8n_workflow(arguments)
+        elif name == "get_n8n_execution_status":
+            return await handle_get_n8n_execution_status(arguments)
+        elif name == "activate_n8n_workflow":
+            return await handle_activate_n8n_workflow(arguments)
+        elif name == "deactivate_n8n_workflow":
+            return await handle_deactivate_n8n_workflow(arguments)
+        elif name == "get_n8n_health":
+            return await handle_get_n8n_health(arguments)
+        elif name == "create_n8n_workflow":
+            return await handle_create_n8n_workflow(arguments)
+        elif name == "update_n8n_workflow":
+            return await handle_update_n8n_workflow(arguments)
+        elif name == "duplicate_n8n_workflow":
+            return await handle_duplicate_n8n_workflow(arguments)
+        elif name == "delete_n8n_workflow":
+            return await handle_delete_n8n_workflow(arguments)
         else:
             return [TextContent(
                 type="text",
@@ -690,9 +870,337 @@ async def handle_get_task_history(arguments: Dict[str, Any]) -> List[TextContent
     
     return [TextContent(type="text", text=history_text)]
 
+# n8n Integration Handlers
+async def handle_list_n8n_workflows(arguments: Dict[str, Any]) -> List[TextContent]:
+    """List n8n workflows."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        active_only = arguments.get("active_only", False)
+        workflows = await n8n.list_workflows(active_only=active_only)
+        
+        if not workflows:
+            return [TextContent(type="text", text="No workflows found.")]
+        
+        result_text = f"🔧 n8n Workflows {'(Active Only)' if active_only else ''}:\n\n"
+        
+        for workflow in workflows:
+            status_emoji = "🟢" if workflow.active else "⚪"
+            result_text += f"{status_emoji} **{workflow.name}** (ID: {workflow.id})\n"
+            result_text += f"   Status: {'Active' if workflow.active else 'Inactive'}\n"
+            result_text += f"   Nodes: {workflow.nodes}\n"
+            result_text += f"   Updated: {workflow.updatedAt}\n"
+            if workflow.tags:
+                result_text += f"   Tags: {', '.join(workflow.tags)}\n"
+            result_text += "\n"
+        
+        result_text += f"Total: {len(workflows)} workflows"
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error listing workflows: {str(e)}")]
+
+async def handle_execute_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Execute an n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments["workflow_id"]
+        data = arguments.get("data")
+        
+        # Get workflow info first
+        workflow = await n8n.get_workflow(workflow_id)
+        if not workflow:
+            return [TextContent(type="text", text=f"❌ Workflow {workflow_id} not found.")]
+        
+        # Execute the workflow
+        execution_id = await n8n.execute_workflow(workflow_id, data)
+        
+        result_text = f"🚀 Workflow Execution Started:\n\n"
+        result_text += f"Workflow: {workflow.name} (ID: {workflow_id})\n"
+        result_text += f"Execution ID: {execution_id}\n"
+        if data:
+            result_text += f"Input Data: {json.dumps(data, indent=2)}\n"
+        result_text += f"\nUse 'get_n8n_execution_status' with execution ID {execution_id} to check progress."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error executing workflow: {str(e)}")]
+
+async def handle_get_n8n_execution_status(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Get n8n execution status."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        execution_id = arguments["execution_id"]
+        execution = await n8n.get_execution_status(execution_id)
+        
+        if not execution:
+            return [TextContent(type="text", text=f"❌ Execution {execution_id} not found.")]
+        
+        status_emoji = {
+            "success": "✅",
+            "running": "🟡", 
+            "waiting": "⏳",
+            "error": "❌",
+            "canceled": "⚪"
+        }.get(execution.status, "❓")
+        
+        result_text = f"{status_emoji} Execution Status:\n\n"
+        result_text += f"Execution ID: {execution.id}\n"
+        result_text += f"Workflow ID: {execution.workflowId}\n"
+        result_text += f"Status: {execution.status}\n"
+        result_text += f"Mode: {execution.mode}\n"
+        
+        if execution.startedAt:
+            result_text += f"Started: {execution.startedAt}\n"
+        if execution.finishedAt:
+            result_text += f"Finished: {execution.finishedAt}\n"
+        if execution.executionTime:
+            result_text += f"Duration: {execution.executionTime}ms\n"
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error getting execution status: {str(e)}")]
+
+async def handle_activate_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Activate an n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments["workflow_id"]
+        
+        # Get workflow info first
+        workflow = await n8n.get_workflow(workflow_id)
+        if not workflow:
+            return [TextContent(type="text", text=f"❌ Workflow {workflow_id} not found.")]
+        
+        if workflow.active:
+            return [TextContent(type="text", text=f"✅ Workflow '{workflow.name}' is already active.")]
+        
+        await n8n.activate_workflow(workflow_id)
+        
+        result_text = f"✅ Workflow Activated:\n\n"
+        result_text += f"Name: {workflow.name}\n"
+        result_text += f"ID: {workflow_id}\n"
+        result_text += f"The workflow is now active and ready to receive triggers."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error activating workflow: {str(e)}")]
+
+async def handle_deactivate_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Deactivate an n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments["workflow_id"]
+        
+        # Get workflow info first
+        workflow = await n8n.get_workflow(workflow_id)
+        if not workflow:
+            return [TextContent(type="text", text=f"❌ Workflow {workflow_id} not found.")]
+        
+        if not workflow.active:
+            return [TextContent(type="text", text=f"⚪ Workflow '{workflow.name}' is already inactive.")]
+        
+        await n8n.deactivate_workflow(workflow_id)
+        
+        result_text = f"⚪ Workflow Deactivated:\n\n"
+        result_text += f"Name: {workflow.name}\n"
+        result_text += f"ID: {workflow_id}\n"
+        result_text += f"The workflow is now inactive and will not respond to triggers."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error deactivating workflow: {str(e)}")]
+
+async def handle_get_n8n_health(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Check n8n health status."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        health = await n8n.health_check()
+        
+        status_emoji = "✅" if health["status"] == "healthy" else "❌"
+        
+        result_text = f"{status_emoji} n8n Health Status:\n\n"
+        result_text += f"Status: {health['status']}\n"
+        result_text += f"URL: {health['base_url']}\n"
+        result_text += f"Checked: {health['timestamp']}\n"
+        
+        if health["status"] == "unhealthy" and "error" in health:
+            result_text += f"\nError: {health['error']}\n"
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error checking n8n health: {str(e)}")]
+
+async def handle_create_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Create a new n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        name = arguments.get("name")
+        if not name:
+            return [TextContent(type="text", text="❌ Workflow name is required.")]
+        
+        nodes = arguments.get("nodes", [])
+        tags = arguments.get("tags", [])
+        
+        workflow = await n8n.create_workflow(name=name, nodes=nodes, tags=tags)
+        
+        if workflow:
+            result_text = f"✅ Workflow created successfully!\n\n"
+            result_text += f"**{workflow.name}** (ID: {workflow.id})\n"
+            result_text += f"Status: {'Active' if workflow.active else 'Inactive'}\n"
+            result_text += f"Nodes: {workflow.nodes}\n"
+            result_text += f"Created: {workflow.createdAt}\n"
+            if workflow.tags:
+                result_text += f"Tags: {', '.join(workflow.tags)}\n"
+        else:
+            result_text = "❌ Failed to create workflow."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error creating workflow: {str(e)}")]
+
+async def handle_update_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Update an existing n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments.get("workflow_id")
+        if not workflow_id:
+            return [TextContent(type="text", text="❌ Workflow ID is required.")]
+        
+        name = arguments.get("name")
+        nodes = arguments.get("nodes")
+        tags = arguments.get("tags")
+        
+        workflow = await n8n.update_workflow(
+            workflow_id=workflow_id, 
+            name=name, 
+            nodes=nodes, 
+            tags=tags
+        )
+        
+        if workflow:
+            result_text = f"✅ Workflow updated successfully!\n\n"
+            result_text += f"**{workflow.name}** (ID: {workflow.id})\n"
+            result_text += f"Status: {'Active' if workflow.active else 'Inactive'}\n"
+            result_text += f"Nodes: {workflow.nodes}\n"
+            result_text += f"Updated: {workflow.updatedAt}\n"
+            if workflow.tags:
+                result_text += f"Tags: {', '.join(workflow.tags)}\n"
+        else:
+            result_text = "❌ Failed to update workflow or workflow not found."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error updating workflow: {str(e)}")]
+
+async def handle_duplicate_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Duplicate an existing n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments.get("workflow_id")
+        if not workflow_id:
+            return [TextContent(type="text", text="❌ Workflow ID is required.")]
+        
+        new_name = arguments.get("new_name")
+        
+        workflow = await n8n.duplicate_workflow(workflow_id=workflow_id, new_name=new_name)
+        
+        if workflow:
+            result_text = f"✅ Workflow duplicated successfully!\n\n"
+            result_text += f"**{workflow.name}** (ID: {workflow.id})\n"
+            result_text += f"Status: {'Active' if workflow.active else 'Inactive'}\n"
+            result_text += f"Nodes: {workflow.nodes}\n"
+            result_text += f"Created: {workflow.createdAt}\n"
+            if workflow.tags:
+                result_text += f"Tags: {', '.join(workflow.tags)}\n"
+        else:
+            result_text = "❌ Failed to duplicate workflow or source workflow not found."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error duplicating workflow: {str(e)}")]
+
+async def handle_delete_n8n_workflow(arguments: Dict[str, Any]) -> List[TextContent]:
+    """Delete an n8n workflow."""
+    n8n = get_n8n_service()
+    if not n8n:
+        return [TextContent(type="text", text="❌ n8n service not configured. Please set N8N_BASE_URL and N8N_API_KEY.")]
+    
+    try:
+        workflow_id = arguments.get("workflow_id")
+        if not workflow_id:
+            return [TextContent(type="text", text="❌ Workflow ID is required.")]
+        
+        # Get workflow info before deletion for confirmation
+        workflow = await n8n.get_workflow(workflow_id)
+        if not workflow:
+            return [TextContent(type="text", text="❌ Workflow not found.")]
+        
+        success = await n8n.delete_workflow(workflow_id)
+        
+        if success:
+            result_text = f"✅ Workflow deleted successfully!\n\n"
+            result_text += f"Deleted: **{workflow.name}** (ID: {workflow_id})\n"
+        else:
+            result_text = "❌ Failed to delete workflow."
+        
+        return [TextContent(type="text", text=result_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"❌ Error deleting workflow: {str(e)}")]
+
 async def main():
     """Main function to run the MCP server."""
     logger.info("Starting Brebot MCP Server...")
+    
+    # Initialize n8n service if configured
+    import os
+    n8n_base_url = os.getenv("N8N_BASE_URL")
+    n8n_api_key = os.getenv("N8N_API_KEY")
+    
+    if n8n_base_url:
+        try:
+            initialize_n8n_service(n8n_base_url, n8n_api_key)
+            logger.info(f"n8n service initialized: {n8n_base_url}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize n8n service: {e}")
+    else:
+        logger.info("n8n service not configured (set N8N_BASE_URL and N8N_API_KEY)")
     
     # Run the server using stdio transport
     async with stdio_server() as (read_stream, write_stream):
